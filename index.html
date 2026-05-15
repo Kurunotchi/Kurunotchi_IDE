@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FlashForge IDE — ESP32 &amp; Arduino</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link
+    href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Syne:wght@400;600;700;800&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+  <!-- ── Titlebar ── -->
+  <div class="titlebar">
+    <div class="logo">
+      <div class="logo-icon">⚡</div>
+      Flash<span class="glow">Forge</span>
+    </div>
+
+    <div class="separator"></div>
+
+    <div class="titlebar-center">
+      <div class="board-select-wrap">
+        <div class="board-icon" id="boardIconLabel">32</div>
+        <select id="boardSelect" onchange="onBoardChange()">
+          <optgroup label="ESP32 Family">
+            <option value="esp32">ESP32 Dev Module</option>
+            <option value="esp32s3">ESP32-S3</option>
+            <option value="esp32c3">ESP32-C3</option>
+            <option value="esp32s2">ESP32-S2</option>
+          </optgroup>
+          <optgroup label="Arduino">
+            <option value="uno">Arduino Uno</option>
+            <option value="nano">Arduino Nano</option>
+            <option value="mega">Arduino Mega 2560</option>
+            <option value="leonardo">Arduino Leonardo</option>
+            <option value="mkr">Arduino MKR WiFi 1010</option>
+          </optgroup>
+          <optgroup label="Other">
+            <option value="wemos">Wemos D1 Mini (ESP8266)</option>
+            <option value="nodemcu">NodeMCU ESP8266</option>
+            <option value="pico">Raspberry Pi Pico</option>
+        </select>
+      </div>
+
+      <div class="port-select-wrap">
+        <div class="port-dot" id="portDot"></div>
+        <select id="portSelect" style="font-size:12px;" onchange="onPortChange()">
+          <option value="">-- Detecting ports... --</option>
+        </select>
+      </div>
+
+      <span id="boardChip" class="chip-badge chip-esp">ESP32 • Xtensa LX6</span>
+    </div>
+
+    <div class="titlebar-right">
+      <button class="btn btn-ghost" onclick="formatCode()" title="Format Code (Ctrl+Shift+F)">⌥ Format</button>
+      <button class="btn btn-verify" onclick="verifyCode()" id="verifyBtn">▶ Verify</button>
+      <button class="btn btn-upload" onclick="uploadCode()" id="uploadBtn">⚡ Upload</button>
+    </div>
+  </div>
+
+  <!-- ── Toolbar ── -->
+  <div class="toolbar">
+    <div class="examples-dropdown" id="examplesDD">
+      <button class="tool-btn" onclick="toggleDropdown()">📂 Examples ▾</button>
+      <div class="dropdown-menu" id="ddMenu">
+        <div class="dropdown-header">Basics</div>
+        <div class="dropdown-item" onclick="loadExample('blink')">Blink LED</div>
+        <div class="dropdown-item" onclick="loadExample('serial')">Serial Hello</div>
+        <div class="dropdown-item" onclick="loadExample('analog')">Analog Read</div>
+        <div class="dropdown-header">ESP32</div>
+        <div class="dropdown-item" onclick="loadExample('wifi')">WiFi Connect</div>
+        <div class="dropdown-item" onclick="loadExample('ble')">BLE Scanner</div>
+        <div class="dropdown-item" onclick="loadExample('deepsleep')">Deep Sleep</div>
+        <div class="dropdown-header">Sensors</div>
+        <div class="dropdown-item" onclick="loadExample('dht22')">DHT22 Temp/Humidity</div>
+        <div class="dropdown-item" onclick="loadExample('ultrasonic')">HC-SR04 Ultrasonic</div>
+      </div>
+    </div>
+    <div class="separator"></div>
+    <button class="tool-btn" onclick="newFile()">＋ New File</button>
+    <button class="tool-btn" id="tab-main" onclick="switchTab('main')" style="color:var(--accent)">main.ino</button>
+    <button class="tool-btn" id="tab-config" onclick="switchTab('config')">config.h</button>
+    <div class="separator"></div>
+    <button class="tool-btn" onclick="toggleTheme()">◑ Theme</button>
+    <button class="tool-btn" onclick="increaseFontSize()">A+</button>
+    <button class="tool-btn" onclick="decreaseFontSize()">A-</button>
+    <div style="flex:1"></div>
+    <span id="cursorPos" style="font-size:12px; color:var(--text3); font-family:var(--font-mono)">Ln 1, Col 1</span>
+  </div>
+
+  <!-- ── Main ── -->
+  <div class="main">
+    <!-- Sidebar -->
+    <div class="sidebar">
+      <div class="sidebar-section">
+        <div class="sidebar-title">Project Files</div>
+        <div class="sidebar-item active" onclick="switchTab('main')">
+          📄 main.ino <span class="file-type type-ino">.ino</span>
+        </div>
+        <div class="sidebar-item" onclick="switchTab('config')">
+          📄 config.h <span class="file-type type-h">.h</span>
+        </div>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-title">Libraries</div>
+        <div class="lib-item lib-installed">✓ WiFi.h</div>
+        <div class="lib-item lib-installed">✓ Arduino.h</div>
+        <div class="lib-item lib-installed">✓ Serial</div>
+        <div class="lib-item" onclick="addLib('DHT')">+ DHT sensor</div>
+        <div class="lib-item" onclick="addLib('Wire')">+ Wire (I2C)</div>
+        <div class="lib-item" onclick="addLib('SPI')">+ SPI</div>
+        <div class="lib-item" onclick="addLib('MQTT')">+ PubSubClient</div>
+        <div class="lib-item" onclick="addLib('FastLED')">+ FastLED</div>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-title">Board Info</div>
+        <div id="boardInfo"
+          style="font-size:11px; color:var(--text3); font-family:var(--font-mono); padding:0 8px; line-height:1.9">
+          CPU: Xtensa LX6<br>
+          Flash: 4MB<br>
+          SRAM: 520KB<br>
+          Speed: 240MHz<br>
+          WiFi: 802.11 b/g/n<br>
+          BLE: 4.2 / 5.0
+        </div>
+      </div>
+    </div>
+
+    <!-- Editor -->
+    <div class="editor-container">
+      <div class="editor-wrap">
+        <div class="line-numbers" id="lineNumbers"></div>
+        <textarea class="code-editor" id="codeEditor" spellcheck="false" oninput="onEditorInput()"
+          onkeydown="handleKeydown(event)" onscroll="syncScroll()" onclick="updateCursor()"
+          onkeyup="updateCursor()"></textarea>
+      </div>
+
+      <!-- Resize handle -->
+      <div class="resize-handle" id="resizeHandle"></div>
+
+      <!-- Bottom panel -->
+      <div class="bottom-panel" id="bottomPanel">
+        <div class="panel-tabs">
+          <button class="panel-tab active" id="tab-output" onclick="switchPanel('output')">Output</button>
+          <button class="panel-tab" id="tab-serial" onclick="switchPanel('serial')">Serial Monitor</button>
+          <button class="panel-tab" id="tab-errors" onclick="switchPanel('errors')">Problems <span id="errorCount"
+              style="background:var(--red);color:#fff;border-radius:99px;padding:0 5px;font-size:10px;margin-left:4px;display:none">0</span></button>
+          <div style="flex:1"></div>
+          <button class="tool-btn" onclick="clearOutput()">🗑 Clear</button>
+        </div>
+
+        <div class="panel-content" id="outputPanel">
+          <div class="log-line"><span class="log-time">[00:00]</span><span class="log-info">FlashForge IDE ready. Select
+              a board and port to begin.</span></div>
+          <div class="log-line"><span class="log-time">[00:00]</span><span class="log-success">✓ ESP32 Arduino core
+              loaded (v2.0.14)</span></div>
+          <div class="log-line"><span class="log-time">[00:00]</span><span class="log-info">Tip: Press Ctrl+Shift+U to
+              upload, Ctrl+R to verify</span></div>
+        </div>
+
+        <div class="panel-content" id="serialPanel"
+          style="display:none; padding-bottom:0; flex-direction:column; flex:1">
+          <div id="serialOutput"
+            style="flex:1; overflow-y:auto; font-size:12px; font-family:var(--font-mono); line-height:1.8">
+            <span style="color:var(--text3)">Serial monitor not connected. Upload code or select a port first.</span>
+          </div>
+        </div>
+        <div id="serialInputRow" class="serial-input-wrap" style="display:none">
+          <input class="serial-input" id="serialInput" placeholder="Send data to device..."
+            onkeydown="if(event.key==='Enter')sendSerial()">
+          <select class="serial-input" style="width:100px" id="baudRate">
+            <option>9600</option>
+            <option>19200</option>
+            <option>38400</option>
+            <option selected>115200</option>
+            <option>230400</option>
+          </select>
+          <button class="serial-send" onclick="sendSerial()">Send</button>
+        </div>
+
+        <div class="panel-content" id="errorsPanel" style="display:none">
+          <span style="color:var(--text3)">No problems detected.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Status bar -->
+  <div class="statusbar">
+    <span class="status-item" id="statusBoard">⚡ ESP32 Dev Module</span>
+    <span class="status-item">|</span>
+    <span class="status-item" id="statusPort">⊖ No Port</span>
+    <span class="status-item">|</span>
+    <span class="status-item" id="statusChars">0 chars</span>
+    <span class="status-item">|</span>
+    <span class="status-item" id="statusReady" style="margin-left:auto; color:#000; font-weight:700">READY</span>
+  </div>
+
+  <!-- Upload overlay -->
+  <div class="upload-overlay" id="uploadOverlay">
+    <div class="upload-card">
+      <div class="upload-title" id="uploadTitle">Compiling...</div>
+      <div class="upload-sub" id="uploadSub">Building firmware for ESP32</div>
+      <div class="progress-track">
+        <div class="progress-bar" id="progressBar"></div>
+      </div>
+      <div class="progress-label" id="progressLabel">0%</div>
+      <div class="upload-steps">
+        <div class="upload-step" id="step1">
+          <div class="step-dot active" id="dot1"></div>Resolving dependencies
+        </div>
+        <div class="upload-step" id="step2">
+          <div class="step-dot" id="dot2"></div>Compiling sketch
+        </div>
+        <div class="upload-step" id="step3">
+          <div class="step-dot" id="dot3"></div>Linking firmware
+        </div>
+        <div class="upload-step" id="step4">
+          <div class="step-dot" id="dot4"></div>Flashing device
+        </div>
+        <div class="upload-step" id="step5">
+          <div class="step-dot" id="dot5"></div>Verifying flash
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="examples.js"></script>
+  <script src="script.js"></script>
+</body>
+
+</html>
