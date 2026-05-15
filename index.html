@@ -10,7 +10,12 @@
     href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Syne:wght@400;600;700;800&display=swap"
     rel="stylesheet">
   <link rel="stylesheet" href="style.css">
-  <script src="https://unpkg.com/esptool-js@0.4.6/bundle.js"></script>
+  <!-- esptool-js: loaded as ES module, exposed as window globals for script.js -->
+  <script type="module">
+    import { ESPLoader, Transport } from 'https://unpkg.com/esptool-js@0.4.6/bundle.js';
+    window.ESPLoader = ESPLoader;
+    window.Transport = Transport;
+  </script>
 </head>
 
 <body>
