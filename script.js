@@ -34,10 +34,10 @@ function init() {
   loadGrantedPorts();
 }
 
-// ── Backend check (optional — only needed for compile) ───────────────────────
+// ── Backend check ───────────────────────────────────────────────────────────────────
 async function checkBackend() {
   try {
-    const res = await fetch(`${BACKEND}/api/ports`, { signal: AbortSignal.timeout(2000) });
+    const res = await fetch(`${BACKEND}/api/ports`, { signal: AbortSignal.timeout(4000) });
     backendOnline = res.ok;
   } catch {
     backendOnline = false;
@@ -254,10 +254,11 @@ async function flashBinFile() {
   input.click();
 }
 
-// ── Verify (needs backend) ────────────────────────────────────────────────────
+// ── Verify (needs backend) ────────────────────────────────────────────────
 async function verifyCode() {
   if (!backendOnline) {
-    addLog('error', '⚠ Compile requires the local backend. Run: node server.js');
+    addLog('error', `⚠ Backend not reachable at: ${BACKEND}`);
+    addLog('info', 'Click ⚙ Settings and make sure the URL starts with https://');
     return;
   }
   const btn   = document.getElementById('verifyBtn');
@@ -440,18 +441,24 @@ async function uploadCode() {
   }
 }
 
-// ── Backend URL settings ──────────────────────────────────────────────────────────────
+// ── Backend URL settings ─────────────────────────────────────────────────────
 function openSettings() {
   const current = localStorage.getItem('kurunotchi_backend') || DEFAULT_BACKEND;
   const url = prompt(
-    'Enter backend URL (Railway/Render/localhost):',
+    'Enter backend URL:\n(e.g. https://your-app.up.railway.app  or  http://localhost:3000)\nMust start with https:// or http://',
     current
   );
   if (url === null) return;
-  const trimmed = url.trim().replace(/\/$/, '');
+
+  let trimmed = url.trim().replace(/\/$/, '');
+  // Auto-fix missing protocol
+  if (trimmed && !trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
+    trimmed = 'https://' + trimmed;
+  }
   BACKEND = trimmed || DEFAULT_BACKEND;
   localStorage.setItem('kurunotchi_backend', BACKEND);
   addLog('info', `Backend URL set to: ${BACKEND}`);
+  addLog('info', 'Testing connection...');
   backendOnline = false;
   checkBackend();
 }
