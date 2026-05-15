@@ -160,6 +160,18 @@ function escapeHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
+// Convert ArrayBuffer → base64 in 8KB chunks to avoid call stack overflow
+// btoa(String.fromCharCode(...hugeArray)) crashes for firmware > ~200KB
+function arrayBufferToBase64(buffer) {
+  const bytes     = new Uint8Array(buffer);
+  const chunkSize = 8192;
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
 function appendSerial(html) {
   const out = document.getElementById('serialOutput');
   out.innerHTML += html + '\n';
@@ -204,7 +216,7 @@ async function flashBinFile() {
 
     try {
       const arrayBuffer = await file.arrayBuffer();
-      const fileContent = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+      const fileContent = arrayBufferToBase64(arrayBuffer);
 
       const transport = new Transport(port, true);
       const loader = new ESPLoader({
@@ -390,7 +402,7 @@ async function uploadCode() {
     // Close serial monitor so esptool can access the port
     if (isConnected) await disconnectPort();
 
-    const fileContent = btoa(String.fromCharCode(...new Uint8Array(binBuffer)));
+    const fileContent = arrayBufferToBase64(binBuffer);
     const transport   = new Transport(serialPort, true);
     const loader      = new ESPLoader({
       transport,
