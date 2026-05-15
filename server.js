@@ -42,7 +42,18 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(express.static(path.join(__dirname)));   // serve index.html, style.css, script.js
+// ── Health / status page ──────────────────────────────────────────────────────
+app.get('/', (req, res) => {
+  res.json({
+    status: 'ok',
+    name:   'Kurunotchi IDE Backend',
+    version: '1.0.0',
+    endpoints: ['/api/ports', '/api/compile', '/api/compile-bin'],
+    info: 'Frontend is hosted on Vercel. This is the compile API only.',
+  });
+});
+app.get('/health', (req, res) => res.json({ status: 'ok' }));
+
 
 // ── Fully Qualified Board Names ──────────────────────────────────────────────
 const FQBN = {
