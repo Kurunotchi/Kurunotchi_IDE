@@ -24,15 +24,63 @@ function init() {
   editor.value = files.main;
   updateLineNumbers();
   updateStatusChars();
-  refreshPorts();
-  connectWS();
+  checkBackend();
+}
+
+// ── Backend health check ──────────────────────────────────────────────────────
+async function checkBackend() {
+  try {
+    const res = await fetch(`${API}/api/ports`, { signal: AbortSignal.timeout(3000) });
+    if (!res.ok) throw new Error('bad response');
+    hideBackendBanner();
+    addLog('success', '✓ Local backend connected (localhost:3000)');
+    connectWS();
+    refreshPorts();
+  } catch {
+    showBackendBanner();
+    addLog('error', '✗ Local backend not found at localhost:3000');
+    addLog('warn', 'Run:  node server.js  in the Kurunotchi_IDE folder, then refresh.');
+    // keep retrying every 5s
+    setTimeout(checkBackend, 5000);
+  }
+}
+
+function showBackendBanner() {
+  if (document.getElementById('backendBanner')) return;
+  const b = document.createElement('div');
+  b.id = 'backendBanner';
+  b.style.cssText = [
+    'position:fixed','top:0','left:0','right:0','z-index:999',
+    'background:linear-gradient(135deg,#1a0a00,#2a1200)',
+    'border-bottom:2px solid #ff6b6b',
+    'padding:10px 20px','display:flex','align-items:center','gap:16px',
+    'font-family:var(--font-ui)','font-size:13px','color:#e8ecf4'
+  ].join(';');
+  b.innerHTML = `
+    <span style="font-size:20px">⚠️</span>
+    <div>
+      <strong style="color:#ff6b6b">Local backend not running.</strong>
+      Serial ports, compile and upload require the backend on your machine.<br>
+      <span style="color:#8b92a8">1. Clone/download the repo &nbsp;|&nbsp;
+      2. Run <code style="background:#2a2f42;padding:1px 6px;border-radius:4px">npm install</code> &nbsp;|&nbsp;
+      3. Run <code style="background:#2a2f42;padding:1px 6px;border-radius:4px">node server.js</code> &nbsp;|&nbsp;
+      4. Open <code style="background:#2a2f42;padding:1px 6px;border-radius:4px">http://localhost:3000</code></span>
+    </div>
+    <button onclick="checkBackend()" style="margin-left:auto;padding:6px 14px;border-radius:6px;background:#ff6b6b;color:#000;border:none;font-weight:700;cursor:pointer">Retry</button>
+  `;
+  document.body.prepend(b);
+}
+
+function hideBackendBanner() {
+  const b = document.getElementById('backendBanner');
+  if (b) b.remove();
 }
 
 // ── WebSocket (serial monitor) ───────────────────────────────────────────────
 function connectWS() {
   ws = new WebSocket(WS_URL);
 
-  ws.onopen = () => addLog('info', 'Backend connected ✓');
+  ws.onopen = () => addLog('info', 'Backend WebSocket connected ✓');
 
   ws.onmessage = (e) => {
     const msg = JSON.parse(e.data);
@@ -68,8 +116,8 @@ function connectWS() {
   };
 
   ws.onclose = () => {
-    addLog('warn', 'Backend disconnected. Retrying in 3s...');
-    setTimeout(connectWS, 3000);
+    // don't spam retries — checkBackend loop will reconnect
+    setTimeout(checkBackend, 5000);
   };
 
   ws.onerror = () => ws.close();

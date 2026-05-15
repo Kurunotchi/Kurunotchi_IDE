@@ -2,6 +2,11 @@
 
 A web-based IDE for **ESP32** and **Arduino** with real compilation and flashing via `arduino-cli`.
 
+> [!IMPORTANT]
+> **Serial ports are physical hardware.** Even if you access this IDE from Vercel or any other hosted URL,
+> **you must run `node server.js` on your own computer** to compile, upload, and use the serial monitor.
+> The hosted page is just a UI — all hardware access happens through your local backend.
+
 ## Features
 - 🔌 Real serial port detection
 - ✅ Compile sketches with `arduino-cli`
