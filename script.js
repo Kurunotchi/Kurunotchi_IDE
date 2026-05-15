@@ -258,8 +258,15 @@ async function verifyCode() {
     return;
   }
   const btn   = document.getElementById('verifyBtn');
+  const bar   = document.getElementById('verifyBar');
+  const ready = document.getElementById('statusReady');
   const board = document.getElementById('boardSelect').value;
-  btn.textContent = '⏳...'; btn.disabled = true;
+
+  btn.textContent = '⏳ Verifying...';
+  btn.classList.add('loading');
+  bar.classList.add('active');
+  ready.textContent = 'COMPILING...';
+  switchPanel('output');
   addLog('info', '─── Compiling ───');
 
   try {
@@ -276,21 +283,28 @@ async function verifyCode() {
     if (data.success) {
       addLog('success', '✓ Compilation successful.');
       document.getElementById('errorCount').style.display = 'none';
+      ready.textContent = 'READY';
     } else {
       addLog('error', '✗ Compilation failed.');
       document.getElementById('errorCount').style.display = 'inline';
       document.getElementById('errorCount').textContent = '!';
+      ready.textContent = 'ERROR';
     }
-  } catch (e) { addLog('error', `Backend error: ${e.message}`); }
+  } catch (e) { addLog('error', `Backend error: ${e.message}`); ready.textContent = 'ERROR'; }
 
-  btn.textContent = '▶ Verify'; btn.disabled = false;
+  btn.textContent = '▶ Verify';
+  btn.classList.remove('loading');
+  bar.classList.remove('active');
 }
 
 // ── Upload (needs backend — backend runs arduino-cli) ────────────────────────
 async function uploadCode() {
+  const ready = document.getElementById('statusReady');
+  const uploadBtn = document.getElementById('uploadBtn');
+
   if (!backendOnline) {
     addLog('error', '⚠ Compile+Upload requires local backend. Run: node server.js');
-    addLog('info', 'Tip: For ESP32, you can also use ⚡ Flash .bin with a pre-compiled binary.');
+    addLog('info', 'Tip: For ESP32, use ⚡ Flash .bin with a pre-compiled binary.');
     return;
   }
   if (!isConnected && !serialPort) {
@@ -298,7 +312,10 @@ async function uploadCode() {
     return;
   }
 
-  // Get port name from Web Serial info (not always available)
+  uploadBtn.classList.add('loading');
+  uploadBtn.textContent = '⏳ Uploading...';
+  ready.textContent = 'UPLOADING...';
+
   const portInfo = serialPort?.getInfo?.() || {};
   addLog('warn', 'Closing serial monitor for upload...');
   await disconnectPort();
@@ -356,10 +373,16 @@ async function uploadCode() {
             document.getElementById('progressLabel').textContent = '100%';
             hideUploadOverlay(true, 'Upload Complete!', 'Device is running your code');
             addLog('success', '✓ Upload successful!');
+            uploadBtn.classList.remove('loading');
+            uploadBtn.textContent = '⚡ Upload';
+            ready.textContent = 'READY';
             setTimeout(openPort, 1500);
           } else {
             hideUploadOverlay(false, 'Upload Failed', 'See output for errors');
             addLog('error', '✗ Upload failed.');
+            uploadBtn.classList.remove('loading');
+            uploadBtn.textContent = '⚡ Upload';
+            ready.textContent = 'ERROR';
           }
         }
       }
@@ -367,6 +390,9 @@ async function uploadCode() {
   } catch (e) {
     hideUploadOverlay(false, 'Error', e.message);
     addLog('error', `Upload error: ${e.message}`);
+    uploadBtn.classList.remove('loading');
+    uploadBtn.textContent = '⚡ Upload';
+    ready.textContent = 'ERROR';
   }
 }
 

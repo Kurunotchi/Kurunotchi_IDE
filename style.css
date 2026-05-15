@@ -635,3 +635,105 @@ select option { background: #1a1e28; }
 .dropdown-item:last-child { border-bottom: none; }
 .dropdown-item:hover { background: var(--bg4); color: var(--accent); }
 .dropdown-header { padding: 6px 14px 4px; font-size: 10px; color: var(--text3); font-family: var(--font-ui); font-weight: 700; letter-spacing: 1px; text-transform: uppercase; }
+
+/* ── Overlay spinner ── */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes spin-reverse {
+  to { transform: rotate(-360deg); }
+}
+
+.overlay-spinner {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 20px;
+  position: relative;
+}
+.overlay-spinner::before,
+.overlay-spinner::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  border: 3px solid transparent;
+}
+.overlay-spinner::before {
+  inset: 0;
+  border-top-color: var(--accent);
+  border-right-color: var(--accent);
+  animation: spin 0.9s linear infinite;
+}
+.overlay-spinner::after {
+  inset: 8px;
+  border-top-color: var(--accent2);
+  border-left-color: var(--accent2);
+  animation: spin-reverse 1.2s linear infinite;
+}
+
+/* ── Button loading state ── */
+@keyframes btn-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.55; }
+}
+.btn-verify.loading {
+  animation: btn-pulse 1s ease-in-out infinite;
+  pointer-events: none;
+  border-color: var(--accent2);
+  background: rgba(0,150,255,0.12);
+}
+.btn-upload.loading {
+  animation: btn-pulse 1s ease-in-out infinite;
+  pointer-events: none;
+  opacity: 0.75;
+}
+
+/* ── Enhanced upload card ── */
+.upload-card {
+  animation: card-in 0.25s cubic-bezier(0.34,1.56,0.64,1);
+}
+@keyframes card-in {
+  from { transform: scale(0.88) translateY(12px); opacity: 0; }
+  to   { transform: scale(1) translateY(0); opacity: 1; }
+}
+
+.step-dot.done {
+  background: var(--green);
+  box-shadow: 0 0 6px var(--green);
+}
+.step-dot.active {
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+  animation: pulse 0.8s infinite;
+}
+
+/* ── Verify progress bar (inline, below verify btn) ── */
+.verify-progress {
+  position: fixed;
+  top: 44px;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: transparent;
+  z-index: 20;
+  overflow: hidden;
+}
+.verify-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent2), var(--accent), var(--accent2));
+  background-size: 200% 100%;
+  animation: shimmer 1.5s linear infinite;
+  width: 100%;
+  display: none;
+}
+@keyframes shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.verify-progress-bar.active { display: block; }
+
+/* ── Logo glow ── */
+.logo span.glow {
+  color: var(--accent);
+  text-shadow: 0 0 12px rgba(0,212,170,0.6);
+}
+

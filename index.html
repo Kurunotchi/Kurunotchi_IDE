@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>FlashForge IDE — ESP32 &amp; Arduino</title>
+  <title>Kurunotchi IDE — ESP32 &amp; Arduino</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
@@ -16,8 +16,8 @@
   <!-- ── Titlebar ── -->
   <div class="titlebar">
     <div class="logo">
-      <div class="logo-icon">⚡</div>
-      Flash<span class="glow">Forge</span>
+      <div class="logo-icon">🐢</div>
+      Kuruno<span class="glow">tchi</span>
     </div>
 
     <div class="separator"></div>
@@ -94,6 +94,9 @@
     <div style="flex:1"></div>
     <span id="cursorPos" style="font-size:12px; color:var(--text3); font-family:var(--font-mono)">Ln 1, Col 1</span>
   </div>
+
+  <!-- Verify shimmer bar -->
+  <div class="verify-progress"><div class="verify-progress-bar" id="verifyBar"></div></div>
 
   <!-- ── Main ── -->
   <div class="main">
@@ -203,31 +206,22 @@
     <span class="status-item" id="statusReady" style="margin-left:auto; color:#000; font-weight:700">READY</span>
   </div>
 
-  <!-- Upload overlay -->
+  <!-- Upload / Verify overlay -->
   <div class="upload-overlay" id="uploadOverlay">
     <div class="upload-card">
-      <div class="upload-title" id="uploadTitle">Compiling...</div>
-      <div class="upload-sub" id="uploadSub">Building firmware for ESP32</div>
+      <div class="overlay-spinner" id="overlaySpinner"></div>
+      <div class="upload-title" id="uploadTitle">Verifying...</div>
+      <div class="upload-sub" id="uploadSub">Compiling sketch</div>
       <div class="progress-track">
         <div class="progress-bar" id="progressBar"></div>
       </div>
       <div class="progress-label" id="progressLabel">0%</div>
       <div class="upload-steps">
-        <div class="upload-step" id="step1">
-          <div class="step-dot active" id="dot1"></div>Resolving dependencies
-        </div>
-        <div class="upload-step" id="step2">
-          <div class="step-dot" id="dot2"></div>Compiling sketch
-        </div>
-        <div class="upload-step" id="step3">
-          <div class="step-dot" id="dot3"></div>Linking firmware
-        </div>
-        <div class="upload-step" id="step4">
-          <div class="step-dot" id="dot4"></div>Flashing device
-        </div>
-        <div class="upload-step" id="step5">
-          <div class="step-dot" id="dot5"></div>Verifying flash
-        </div>
+        <div class="upload-step" id="step1"><div class="step-dot" id="dot1"></div>✓ Resolving dependencies</div>
+        <div class="upload-step" id="step2"><div class="step-dot" id="dot2"></div>✓ Compiling sketch</div>
+        <div class="upload-step" id="step3"><div class="step-dot" id="dot3"></div>✓ Linking firmware</div>
+        <div class="upload-step" id="step4"><div class="step-dot" id="dot4"></div>⚡ Flashing device</div>
+        <div class="upload-step" id="step5"><div class="step-dot" id="dot5"></div>✔ Verifying flash</div>
       </div>
     </div>
   </div>
