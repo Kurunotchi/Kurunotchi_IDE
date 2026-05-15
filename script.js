@@ -2,7 +2,10 @@
 // FlashForge IDE — Frontend (Web Serial API + optional local backend)
 // ─────────────────────────────────────────────────────────────────────────────
 
-const BACKEND = 'http://localhost:3000';
+// Always connect to the cloud/local backend.
+// Set via Settings button, stored in localStorage.
+const DEFAULT_BACKEND = 'http://localhost:3000';
+let BACKEND = localStorage.getItem('kurunotchi_backend') || DEFAULT_BACKEND;
 const WEB_SERIAL = 'serial' in navigator;
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -40,13 +43,13 @@ async function checkBackend() {
     backendOnline = false;
   }
   if (backendOnline) {
-    addLog('success', '✓ Local backend online — compile & upload via arduino-cli available');
+    addLog('success', `\u2713 Backend connected: ${BACKEND}`);
   } else {
     if (WEB_SERIAL) {
-      addLog('success', '✓ Web Serial API ready — click 🔌 Connect to select your port');
-      addLog('info', 'ℹ Compile/Upload: start  node server.js  locally to enable');
+      addLog('success', '\u2713 Web Serial API ready \u2014 click \ud83d\udd0c Connect to select your port');
+      addLog('info', '\u2139 Compile/Upload: click \u2699 Settings to enter your Railway/Render backend URL.');
     } else {
-      addLog('warn', '⚠ Use Chrome or Edge 89+ for Web Serial port access');
+      addLog('warn', '\u26a0 Use Chrome or Edge 89+ for Web Serial port access');
     }
   }
   setTimeout(checkBackend, 15000);
@@ -298,103 +301,162 @@ async function verifyCode() {
 }
 
 // ── Upload (needs backend — backend runs arduino-cli) ────────────────────────
+// ── Upload: compile on backend → flash via esptool-js (ESP32) ─────────────────────
 async function uploadCode() {
-  const ready = document.getElementById('statusReady');
+  const ready     = document.getElementById('statusReady');
   const uploadBtn = document.getElementById('uploadBtn');
+  const board     = document.getElementById('boardSelect').value;
 
   if (!backendOnline) {
-    addLog('error', '⚠ Compile+Upload requires local backend. Run: node server.js');
-    addLog('info', 'Tip: For ESP32, use ⚡ Flash .bin with a pre-compiled binary.');
+    addLog('error', `⚠ Backend not reachable at ${BACKEND}`);
+    addLog('info', 'Click ⚙ Settings to set your backend URL, or use ⚡ Flash .bin.');
     return;
   }
-  if (!isConnected && !serialPort) {
-    addLog('warn', '⚠ No port connected. Click 🔌 Connect first.');
+  if (!WEB_SERIAL) {
+    addLog('error', '⚠ Web Serial API required — use Chrome or Edge 89+');
     return;
+  }
+
+  // Connect port if not already
+  if (!serialPort) {
+    try { serialPort = await navigator.serial.requestPort(); }
+    catch { addLog('error', 'No port selected.'); return; }
   }
 
   uploadBtn.classList.add('loading');
-  uploadBtn.textContent = '⏳ Uploading...';
-  ready.textContent = 'UPLOADING...';
-
-  const portInfo = serialPort?.getInfo?.() || {};
-  addLog('warn', 'Closing serial monitor for upload...');
-  await disconnectPort();
-
-  const board = document.getElementById('boardSelect').value;
-  showUploadOverlay('Uploading...', `Flashing to ${document.getElementById('boardSelect').options[document.getElementById('boardSelect').selectedIndex].text}`);
-  setAllSteps(''); setStep(1, 'active');
+  uploadBtn.textContent = '⏳ Compiling...';
+  ready.textContent = 'COMPILING...';
+  showUploadOverlay('Compiling...', `Building for ${document.getElementById('boardSelect').options[document.getElementById('boardSelect').selectedIndex].text}`);
+  setAllSteps(''); setStep(1,'active');
   switchPanel('output');
-  addLog('info', '─── Uploading via arduino-cli ───');
+  addLog('info', '─── Compile + Flash ───');
 
-  // Prompt user for port path since Web Serial doesn't expose COM name
-  const port = prompt('Enter the COM port (e.g. COM3 or /dev/ttyUSB0):\n(Web Serial hides the port name from JS — this is required for arduino-cli)');
-  if (!port) { hideUploadOverlay(false, 'Cancelled', ''); return; }
+  // Step 1: Compile and get binary
+  let binBuffer;
+  let compileLog = '';
+  try {
+    addLog('info', 'Compiling on backend...');
+    const res = await fetch(`${BACKEND}/api/compile-bin`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: editor.value, board }),
+    });
 
-  const phaseKw = [
-    { pct:20, step:1, next:2, kw:/Compil/i },
-    { pct:50, step:2, next:3, kw:/Link/i },
-    { pct:75, step:3, next:4, kw:/Writing|esptool|avrdude/i },
-    { pct:92, step:4, next:5, kw:/Verif/i },
-  ];
-  let phaseIdx = 0;
+    if (!res.ok) {
+      const err = await res.json();
+      compileLog = err.output || err.error || 'Unknown compile error';
+      compileLog.split('\n').filter(Boolean).forEach(l => addLog(/error:/i.test(l)?'error':'warn', l));
+      throw new Error('Compilation failed');
+    }
+
+    // Show compile log from header
+    const logB64 = res.headers.get('X-Compile-Output');
+    if (logB64) {
+      atob(logB64).split('\n').filter(Boolean).forEach(l => {
+        if (/error:/i.test(l)) addLog('error', l);
+        else if (/warn:/i.test(l)) addLog('warn', l);
+        else addLog('info', l);
+      });
+    }
+
+    binBuffer = await res.arrayBuffer();
+    addLog('success', `✓ Compiled (${(binBuffer.byteLength/1024).toFixed(1)} KB)`);
+
+  } catch (err) {
+    hideUploadOverlay(false, 'Compile Failed', err.message);
+    uploadBtn.classList.remove('loading'); uploadBtn.textContent = '⚡ Upload'; ready.textContent = 'ERROR';
+    return;
+  }
+
+  setStep(1,'done'); setStep(2,'active');
+  document.getElementById('progressBar').style.width = '30%';
+  document.getElementById('progressLabel').textContent = '30%';
+
+  // Step 2: Flash via esptool-js (ESP32 only)
+  const isESP = ['esp32','esp32s3','esp32c3','esp32s2','wemos','nodemcu'].includes(board);
+  if (!isESP) {
+    hideUploadOverlay(false, 'AVR Flash Coming Soon', 'Use Arduino IDE for Uno/Nano/Mega upload for now');
+    addLog('warn', '⚠ esptool-js only supports ESP32/ESP8266. For AVR, use Arduino IDE or the local node server.js backend.');
+    uploadBtn.classList.remove('loading'); uploadBtn.textContent = '⚡ Upload'; ready.textContent = 'READY';
+    return;
+  }
+
+  uploadBtn.textContent = '⏳ Flashing...';
+  ready.textContent = 'FLASHING...';
+  showUploadOverlay('Flashing...', 'Writing firmware to device');
+  setStep(2,'done'); setStep(3,'active');
 
   try {
-    const res = await fetch(`${BACKEND}/api/upload`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code: editor.value, board, port }),
+    // Close serial monitor so esptool can access the port
+    if (isConnected) await disconnectPort();
+
+    const fileContent = btoa(String.fromCharCode(...new Uint8Array(binBuffer)));
+    const transport   = new Transport(serialPort, true);
+    const loader      = new ESPLoader({
+      transport,
+      baudrate: 921600,
+      terminal: {
+        clean:     ()  => {},
+        writeLine: (d) => { if (d.trim()) addLog('info', d.trim()); },
+        write:     (d) => { if (d.trim()) addLog('info', d.trim()); },
+      },
+      enableTracing: false,
     });
-    const reader = res.body.getReader();
-    const dec = new TextDecoder();
-    let buf = '';
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buf += dec.decode(value, { stream: true });
-      for (const raw of buf.split('\n\n')) {
-        buf = '';
-        const line = raw.replace(/^data: /,'').trim();
-        if (!line) continue;
-        let msg; try { msg = JSON.parse(line); } catch { continue; }
-        if (msg.type === 'log' && msg.text?.trim()) {
-          const t = msg.text.trim();
-          if (/error:/i.test(t)) addLog('error', t);
-          else addLog('info', t);
-          while (phaseIdx < phaseKw.length && phaseKw[phaseIdx].kw.test(t)) {
-            const p = phaseKw[phaseIdx++];
-            setStep(p.step,'done'); if(p.next<=5) setStep(p.next,'active');
-            document.getElementById('progressBar').style.width = p.pct+'%';
-            document.getElementById('progressLabel').textContent = p.pct+'%';
-          }
-        }
-        if (msg.type === 'done') {
-          if (msg.success) {
-            setAllSteps('done');
-            document.getElementById('progressBar').style.width = '100%';
-            document.getElementById('progressLabel').textContent = '100%';
-            hideUploadOverlay(true, 'Upload Complete!', 'Device is running your code');
-            addLog('success', '✓ Upload successful!');
-            uploadBtn.classList.remove('loading');
-            uploadBtn.textContent = '⚡ Upload';
-            ready.textContent = 'READY';
-            setTimeout(openPort, 1500);
-          } else {
-            hideUploadOverlay(false, 'Upload Failed', 'See output for errors');
-            addLog('error', '✗ Upload failed.');
-            uploadBtn.classList.remove('loading');
-            uploadBtn.textContent = '⚡ Upload';
-            ready.textContent = 'ERROR';
-          }
-        }
-      }
-    }
-  } catch (e) {
-    hideUploadOverlay(false, 'Error', e.message);
-    addLog('error', `Upload error: ${e.message}`);
-    uploadBtn.classList.remove('loading');
-    uploadBtn.textContent = '⚡ Upload';
-    ready.textContent = 'ERROR';
+
+    addLog('info', 'Connecting to chip...');
+    const chip = await loader.main();
+    addLog('success', `✓ Connected: ${chip}`);
+
+    setStep(3,'done'); setStep(4,'active');
+    document.getElementById('progressBar').style.width = '55%';
+    document.getElementById('progressLabel').textContent = '55%';
+
+    await loader.writeFlash({
+      fileArray:  [{ data: fileContent, address: 0x0 }],
+      flashSize:  'keep', flashMode: 'keep', flashFreq: 'keep',
+      eraseAll:   false, compress: true,
+      reportProgress(idx, written, total) {
+        const pct = Math.round(55 + (written / total) * 40);
+        document.getElementById('progressBar').style.width  = pct + '%';
+        document.getElementById('progressLabel').textContent = pct + '%';
+      },
+    });
+
+    setStep(4,'done'); setStep(5,'active');
+    await loader.after();
+    await transport.disconnect();
+    setStep(5,'done');
+
+    document.getElementById('progressBar').style.width = '100%';
+    document.getElementById('progressLabel').textContent = '100%';
+    hideUploadOverlay(true, 'Upload Complete!', 'Device is running your code');
+    addLog('success', '✓ Flash successful! Device is running.');
+    uploadBtn.classList.remove('loading'); uploadBtn.textContent = '⚡ Upload'; ready.textContent = 'READY';
+    setTimeout(openPort, 1500);
+
+  } catch (err) {
+    hideUploadOverlay(false, 'Flash Failed', err.message);
+    addLog('error', `Flash error: ${err.message}`);
+    uploadBtn.classList.remove('loading'); uploadBtn.textContent = '⚡ Upload'; ready.textContent = 'ERROR';
   }
 }
+
+// ── Backend URL settings ──────────────────────────────────────────────────────────────
+function openSettings() {
+  const current = localStorage.getItem('kurunotchi_backend') || DEFAULT_BACKEND;
+  const url = prompt(
+    'Enter backend URL (Railway/Render/localhost):',
+    current
+  );
+  if (url === null) return;
+  const trimmed = url.trim().replace(/\/$/, '');
+  BACKEND = trimmed || DEFAULT_BACKEND;
+  localStorage.setItem('kurunotchi_backend', BACKEND);
+  addLog('info', `Backend URL set to: ${BACKEND}`);
+  backendOnline = false;
+  checkBackend();
+}
+
+
 
 // ── Upload overlay helpers ────────────────────────────────────────────────────
 function showUploadOverlay(title, sub) {

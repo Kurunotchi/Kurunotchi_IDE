@@ -6,7 +6,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Kurunotchi IDE — ESP32 &amp; Arduino</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link
+    href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Syne:wght@400;600;700;800&display=swap"
+    rel="stylesheet">
   <link rel="stylesheet" href="style.css">
   <script src="https://unpkg.com/esptool-js@0.4.6/bundle.js"></script>
 </head>
@@ -17,7 +19,7 @@
   <div class="titlebar">
     <div class="logo">
       <div class="logo-icon">🐢</div>
-      Kuruno<span class="glow">tchi</span>
+      Kuru<span class="glow">notchi</span>
     </div>
 
     <div class="separator"></div>
@@ -49,14 +51,17 @@
       <div class="port-select-wrap" id="portSelectWrap">
         <div class="port-dot" id="portDot"></div>
         <span id="portLabel" style="font-size:12px;color:var(--text2);font-family:var(--font-mono)">No port</span>
-        <button class="btn btn-ghost" id="portConnectBtn" onclick="connectPort()" style="padding:3px 10px;font-size:12px">🔌 Connect</button>
-        <button class="btn btn-ghost" id="portDisconnectBtn" onclick="disconnectPort()" style="padding:3px 10px;font-size:12px;display:none">⏏ Disconnect</button>
+        <button class="btn btn-ghost" id="portConnectBtn" onclick="connectPort()"
+          style="padding:3px 10px;font-size:12px">🔌 Connect</button>
+        <button class="btn btn-ghost" id="portDisconnectBtn" onclick="disconnectPort()"
+          style="padding:3px 10px;font-size:12px;display:none">⏏ Disconnect</button>
       </div>
 
       <span id="boardChip" class="chip-badge chip-esp">ESP32 • Xtensa LX6</span>
     </div>
 
     <div class="titlebar-right">
+      <button class="btn btn-ghost" onclick="openSettings()" title="Configure backend URL">⚙ Settings</button>
       <button class="btn btn-ghost" onclick="formatCode()" title="Format Code (Ctrl+Shift+F)">⌥ Format</button>
       <button class="btn btn-verify" onclick="verifyCode()" id="verifyBtn">▶ Verify</button>
       <button class="btn btn-upload" onclick="uploadCode()" id="uploadBtn">⚡ Upload</button>
@@ -86,7 +91,8 @@
     <button class="tool-btn" id="tab-main" onclick="switchTab('main')" style="color:var(--accent)">main.ino</button>
     <button class="tool-btn" id="tab-config" onclick="switchTab('config')">config.h</button>
     <div class="separator"></div>
-    <button class="tool-btn" onclick="flashBinFile()" title="Flash a pre-compiled .bin to ESP32 (no backend needed)">⚡ Flash .bin</button>
+    <button class="tool-btn" onclick="flashBinFile()" title="Flash a pre-compiled .bin to ESP32 (no backend needed)">⚡
+      Flash .bin</button>
     <div class="separator"></div>
     <button class="tool-btn" onclick="toggleTheme()">◑ Theme</button>
     <button class="tool-btn" onclick="increaseFontSize()">A+</button>
@@ -96,7 +102,9 @@
   </div>
 
   <!-- Verify shimmer bar -->
-  <div class="verify-progress"><div class="verify-progress-bar" id="verifyBar"></div></div>
+  <div class="verify-progress">
+    <div class="verify-progress-bar" id="verifyBar"></div>
+  </div>
 
   <!-- ── Main ── -->
   <div class="main">
@@ -217,11 +225,21 @@
       </div>
       <div class="progress-label" id="progressLabel">0%</div>
       <div class="upload-steps">
-        <div class="upload-step" id="step1"><div class="step-dot" id="dot1"></div>✓ Resolving dependencies</div>
-        <div class="upload-step" id="step2"><div class="step-dot" id="dot2"></div>✓ Compiling sketch</div>
-        <div class="upload-step" id="step3"><div class="step-dot" id="dot3"></div>✓ Linking firmware</div>
-        <div class="upload-step" id="step4"><div class="step-dot" id="dot4"></div>⚡ Flashing device</div>
-        <div class="upload-step" id="step5"><div class="step-dot" id="dot5"></div>✔ Verifying flash</div>
+        <div class="upload-step" id="step1">
+          <div class="step-dot" id="dot1"></div>✓ Resolving dependencies
+        </div>
+        <div class="upload-step" id="step2">
+          <div class="step-dot" id="dot2"></div>✓ Compiling sketch
+        </div>
+        <div class="upload-step" id="step3">
+          <div class="step-dot" id="dot3"></div>✓ Linking firmware
+        </div>
+        <div class="upload-step" id="step4">
+          <div class="step-dot" id="dot4"></div>⚡ Flashing device
+        </div>
+        <div class="upload-step" id="step5">
+          <div class="step-dot" id="dot5"></div>✔ Verifying flash
+        </div>
       </div>
     </div>
   </div>

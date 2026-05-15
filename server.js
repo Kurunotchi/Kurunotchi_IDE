@@ -1,6 +1,6 @@
 /**
- * FlashForge IDE — Backend Server
- * Provides: serial port listing, arduino-cli compile/upload, WebSocket serial monitor
+ * Kurunotchi IDE — Backend Server
+ * Provides: arduino-cli compile/upload, /api/compile-bin (returns binary), WebSocket serial monitor
  *
  * Requirements:
  *   - Node.js >= 18
@@ -101,6 +101,58 @@ app.post('/api/compile', (req, res) => {
       const output = (stdout + '\n' + stderr).trim();
       res.json({ success: !err, output });
       setTimeout(() => cleanupTemp(tmpDir), 5000);
+    }
+  );
+});
+
+// ── POST /api/compile-bin ────────────────────────────────────────────────────────────────────────────
+// Body: { code: string, board: string }
+// Returns: binary file (.bin) as octet-stream, OR JSON error
+// Header X-Compile-Output: base64-encoded compiler log
+app.post('/api/compile-bin', (req, res) => {
+  const { code, board } = req.body;
+  const fqbn = FQBN[board];
+  if (!fqbn) return res.status(400).json({ error: `Unknown board: ${board}` });
+  if (!code)  return res.status(400).json({ error: 'No code provided' });
+
+  const { tmpDir, sketchDir } = writeTempSketch(code);
+  const buildDir = path.join(tmpDir, 'build');
+  fs.mkdirSync(buildDir, { recursive: true });
+
+  exec(
+    `arduino-cli compile --fqbn "${fqbn}" --output-dir "${buildDir}" "${sketchDir}"`,
+    { timeout: 120_000 },
+    (err, stdout, stderr) => {
+      const log = (stdout + '\n' + stderr).trim();
+      if (err) {
+        cleanupTemp(tmpDir);
+        return res.status(400).json({ success: false, output: log });
+      }
+
+      // Find the main app binary (prefer .bin, skip bootloader/partitions)
+      const files = fs.readdirSync(buildDir);
+      // ESP32 produces sketch.ino.bin; AVR produces sketch.ino.hex
+      const binFile = files.find(f => f.endsWith('.ino.bin')) ||
+                      files.find(f => f.endsWith('.bin')) ||
+                      files.find(f => f.endsWith('.ino.hex')) ||
+                      files.find(f => f.endsWith('.hex'));
+
+      if (!binFile) {
+        cleanupTemp(tmpDir);
+        return res.status(500).json({ error: 'No binary produced', output: log });
+      }
+
+      const binPath = path.join(buildDir, binFile);
+      const logB64  = Buffer.from(log).toString('base64');
+
+      res.setHeader('Content-Type', 'application/octet-stream');
+      res.setHeader('Content-Disposition', `attachment; filename="${binFile}"`);
+      res.setHeader('X-Compile-Output', logB64);
+      res.setHeader('X-Bin-Name', binFile);
+
+      const stream = fs.createReadStream(binPath);
+      stream.pipe(res);
+      stream.on('close', () => setTimeout(() => cleanupTemp(tmpDir), 2000));
     }
   );
 });
@@ -226,6 +278,6 @@ wss.on('connection', ws => {
 // ── Start ────────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log(`\n⚡ FlashForge IDE running at http://localhost:${PORT}`);
-  console.log('   Make sure arduino-cli is installed: https://arduino.github.io/arduino-cli\n');
+  console.log(`\n🐢 Kurunotchi IDE backend running at http://localhost:${PORT}`);
+  console.log('   arduino-cli required: https://arduino.github.io/arduino-cli\n');
 });
