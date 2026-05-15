@@ -88,6 +88,24 @@ function cleanupTemp(tmpDir) {
   try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}
 }
 
+// ── Build the arduino-cli compile command ───────────────────────────────────────────
+// --jobs 1  : single-threaded = lower peak RAM (critical on free Railway 512MB)
+// --warnings none: skip warning pass = less memory
+function compileCmd(fqbn, sketchDir, outDir) {
+  const out  = outDir ? `--output-dir "${outDir}"` : '';
+  return `arduino-cli compile --fqbn "${fqbn}" --jobs 1 --warnings none ${out} "${sketchDir}"`;
+}
+
+function oomMessage(signal, code) {
+  if (signal === 'SIGKILL' || code === 137) {
+    return 'Compilation was killed (out of memory).\n'
+      + 'ESP32 compilation needs ~1.5 GB RAM. Railway free tier only provides 512 MB.\n'
+      + 'Fix: Go to Railway → your service → Settings → upgrade to Starter plan ($5/mo).\n'
+      + 'Alternative: Use Arduino IDE locally and upload the .bin with ⚡ Flash .bin.';
+  }
+  return null;
+}
+
 // ── GET /api/ports ───────────────────────────────────────────────────────────
 app.get('/api/ports', async (req, res) => {
   if (!SerialPort) return res.json([]);   // cloud mode — Web Serial API used instead
@@ -117,11 +135,16 @@ app.post('/api/compile', (req, res) => {
   const { tmpDir, sketchDir } = writeTempSketch(code);
 
   exec(
-    `arduino-cli compile --fqbn "${fqbn}" "${sketchDir}"`,
-    { timeout: 120_000 },
+    compileCmd(fqbn, sketchDir, null),
+    { timeout: 180_000 },
     (err, stdout, stderr) => {
       const output = (stdout + '\n' + stderr).trim();
-      res.json({ success: !err, output });
+      if (err) {
+        const oom = oomMessage(err.signal, err.code);
+        res.json({ success: false, output: oom ? oom : output });
+      } else {
+        res.json({ success: true, output });
+      }
       setTimeout(() => cleanupTemp(tmpDir), 5000);
     }
   );
@@ -142,18 +165,17 @@ app.post('/api/compile-bin', (req, res) => {
   fs.mkdirSync(buildDir, { recursive: true });
 
   exec(
-    `arduino-cli compile --fqbn "${fqbn}" --output-dir "${buildDir}" "${sketchDir}"`,
-    { timeout: 120_000 },
+    compileCmd(fqbn, sketchDir, buildDir),
+    { timeout: 180_000 },
     (err, stdout, stderr) => {
       const log = (stdout + '\n' + stderr).trim();
       if (err) {
         cleanupTemp(tmpDir);
-        return res.status(400).json({ success: false, output: log });
+        const oom = oomMessage(err.signal, err.code);
+        return res.status(400).json({ success: false, output: oom || log });
       }
 
-      // Find the main app binary (prefer .bin, skip bootloader/partitions)
       const files = fs.readdirSync(buildDir);
-      // ESP32 produces sketch.ino.bin; AVR produces sketch.ino.hex
       const binFile = files.find(f => f.endsWith('.ino.bin')) ||
                       files.find(f => f.endsWith('.bin')) ||
                       files.find(f => f.endsWith('.ino.hex')) ||
