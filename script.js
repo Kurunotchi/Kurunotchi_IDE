@@ -40,12 +40,16 @@ async function checkBackend() {
     backendOnline = false;
   }
   if (backendOnline) {
-    addLog('success', '✓ Local backend online — compile & upload available');
+    addLog('success', '✓ Local backend online — compile & upload via arduino-cli available');
   } else {
-    addLog('info', 'ℹ No local backend detected. Port detection & serial monitor use Web Serial API (Chrome/Edge only).');
-    addLog('info', 'ℹ To enable compile/upload: run  node server.js  locally.');
+    if (WEB_SERIAL) {
+      addLog('success', '✓ Web Serial API ready — click 🔌 Connect to select your port');
+      addLog('info', 'ℹ Compile/Upload: start  node server.js  locally to enable');
+    } else {
+      addLog('warn', '⚠ Use Chrome or Edge 89+ for Web Serial port access');
+    }
   }
-  setTimeout(checkBackend, 10000);
+  setTimeout(checkBackend, 15000);
 }
 
 // ── Web Serial: load previously granted ports ────────────────────────────────
