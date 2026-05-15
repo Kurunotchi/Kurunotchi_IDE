@@ -1,135 +1,156 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// FlashForge IDE — Frontend (connects to Node.js backend on localhost:3000)
+// FlashForge IDE — Frontend (Web Serial API + optional local backend)
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Always talk to the local backend, regardless of how the page was opened.
-const BACKEND_HOST = 'localhost:3000';
-const API    = `http://${BACKEND_HOST}`;
-const WS_URL = `ws://${BACKEND_HOST}`;
+const BACKEND = 'http://localhost:3000';
+const WEB_SERIAL = 'serial' in navigator;
 
-// ── State ────────────────────────────────────────────────────────────────────
+// ── State ─────────────────────────────────────────────────────────────────────
 let currentTab   = 'main';
 let currentPanel = 'output';
 let files        = { main: EXAMPLES.blink, config: CONFIG_H };
 let fontSize     = 13.5;
-let isConnected  = false;   // serial port connected
+let isConnected  = false;
 let logCount     = 0;
-let ws           = null;    // WebSocket to backend serial monitor
+let backendOnline = false;
+
+// Web Serial state
+let serialPort   = null;
+let serialReader = null;
+let serialStreamClosed = null;
 
 const editor   = document.getElementById('codeEditor');
 const lineNums = document.getElementById('lineNumbers');
 
-// ── Boot ─────────────────────────────────────────────────────────────────────
+// ── Init ──────────────────────────────────────────────────────────────────────
 function init() {
   editor.value = files.main;
   updateLineNumbers();
   updateStatusChars();
   checkBackend();
+  loadGrantedPorts();
 }
 
-// ── Backend health check ──────────────────────────────────────────────────────
+// ── Backend check (optional — only needed for compile) ───────────────────────
 async function checkBackend() {
   try {
-    const res = await fetch(`${API}/api/ports`, { signal: AbortSignal.timeout(3000) });
-    if (!res.ok) throw new Error('bad response');
-    hideBackendBanner();
-    addLog('success', '✓ Local backend connected (localhost:3000)');
-    connectWS();
-    refreshPorts();
+    const res = await fetch(`${BACKEND}/api/ports`, { signal: AbortSignal.timeout(2000) });
+    backendOnline = res.ok;
   } catch {
-    showBackendBanner();
-    addLog('error', '✗ Local backend not found at localhost:3000');
-    addLog('warn', 'Run:  node server.js  in the Kurunotchi_IDE folder, then refresh.');
-    // keep retrying every 5s
-    setTimeout(checkBackend, 5000);
+    backendOnline = false;
+  }
+  if (backendOnline) {
+    addLog('success', '✓ Local backend online — compile & upload available');
+  } else {
+    addLog('info', 'ℹ No local backend detected. Port detection & serial monitor use Web Serial API (Chrome/Edge only).');
+    addLog('info', 'ℹ To enable compile/upload: run  node server.js  locally.');
+  }
+  setTimeout(checkBackend, 10000);
+}
+
+// ── Web Serial: load previously granted ports ────────────────────────────────
+async function loadGrantedPorts() {
+  if (!WEB_SERIAL) return;
+  const ports = await navigator.serial.getPorts();
+  if (ports.length > 0) {
+    addLog('info', `${ports.length} previously authorized port(s) available — click 🔌 Connect`);
   }
 }
 
-function showBackendBanner() {
-  if (document.getElementById('backendBanner')) return;
-  const b = document.createElement('div');
-  b.id = 'backendBanner';
-  b.style.cssText = [
-    'position:fixed','top:0','left:0','right:0','z-index:999',
-    'background:linear-gradient(135deg,#1a0a00,#2a1200)',
-    'border-bottom:2px solid #ff6b6b',
-    'padding:10px 20px','display:flex','align-items:center','gap:16px',
-    'font-family:var(--font-ui)','font-size:13px','color:#e8ecf4'
-  ].join(';');
-  b.innerHTML = `
-    <span style="font-size:20px">⚠️</span>
-    <div>
-      <strong style="color:#ff6b6b">Local backend not running.</strong>
-      Serial ports, compile and upload require the backend on your machine.<br>
-      <span style="color:#8b92a8">1. Clone/download the repo &nbsp;|&nbsp;
-      2. Run <code style="background:#2a2f42;padding:1px 6px;border-radius:4px">npm install</code> &nbsp;|&nbsp;
-      3. Run <code style="background:#2a2f42;padding:1px 6px;border-radius:4px">node server.js</code> &nbsp;|&nbsp;
-      4. Open <code style="background:#2a2f42;padding:1px 6px;border-radius:4px">http://localhost:3000</code></span>
-    </div>
-    <button onclick="checkBackend()" style="margin-left:auto;padding:6px 14px;border-radius:6px;background:#ff6b6b;color:#000;border:none;font-weight:700;cursor:pointer">Retry</button>
-  `;
-  document.body.prepend(b);
+// ── Connect port (Web Serial picker) ─────────────────────────────────────────
+async function connectPort() {
+  if (!WEB_SERIAL) {
+    addLog('error', '⚠ Web Serial API not supported. Use Chrome or Edge 89+.');
+    return;
+  }
+  if (isConnected) { await disconnectPort(); return; }
+
+  try {
+    serialPort = await navigator.serial.requestPort();
+  } catch (e) {
+    if (e.name !== 'NotFoundError') addLog('error', `Port picker error: ${e.message}`);
+    return;
+  }
+  await openPort();
 }
 
-function hideBackendBanner() {
-  const b = document.getElementById('backendBanner');
-  if (b) b.remove();
+async function openPort() {
+  if (!serialPort) return;
+  const baud = parseInt(document.getElementById('baudRate').value, 10);
+  try {
+    await serialPort.open({ baudRate: baud });
+  } catch (e) {
+    addLog('error', `Could not open port: ${e.message}`);
+    serialPort = null;
+    return;
+  }
+
+  isConnected = true;
+  document.getElementById('portDot').className = 'port-dot connected';
+  document.getElementById('portLabel').textContent = 'Connected';
+  document.getElementById('portConnectBtn').style.display = 'none';
+  document.getElementById('portDisconnectBtn').style.display = '';
+  document.getElementById('statusPort').textContent = '● Serial';
+  document.getElementById('serialInputRow').style.display = 'flex';
+  switchPanel('serial');
+  appendSerial(`<span style="color:var(--green)">✓ Serial connected @ ${baud} baud</span>`);
+  addLog('success', `Serial port opened @ ${baud} baud`);
+
+  startReading();
 }
 
-// ── WebSocket (serial monitor) ───────────────────────────────────────────────
-function connectWS() {
-  ws = new WebSocket(WS_URL);
-
-  ws.onopen = () => addLog('info', 'Backend WebSocket connected ✓');
-
-  ws.onmessage = (e) => {
-    const msg = JSON.parse(e.data);
-
-    if (msg.type === 'connected') {
-      isConnected = true;
-      document.getElementById('portDot').className = 'port-dot connected';
-      document.getElementById('statusPort').textContent = '● ' + msg.port;
-      document.getElementById('serialInputRow').style.display = 'flex';
-      appendSerial(`<span style="color:var(--green)">✓ Serial connected — ${msg.port} @ ${msg.baudRate} baud</span>`);
-      addLog('success', `Serial monitor connected: ${msg.port} @ ${msg.baudRate} baud`);
+async function startReading() {
+  try {
+    const decoder = new TextDecoderStream();
+    serialStreamClosed = serialPort.readable.pipeTo(decoder.writable);
+    serialReader = decoder.readable.getReader();
+    while (true) {
+      const { value, done } = await serialReader.read();
+      if (done) break;
+      if (value) appendSerial(escapeHtml(value));
     }
-
-    if (msg.type === 'disconnected' || msg.type === 'serial_disconnected') {
-      isConnected = false;
-      document.getElementById('portDot').className = 'port-dot';
-      document.getElementById('serialInputRow').style.display = 'none';
-      if (msg.reason === 'upload') {
-        appendSerial('<span style="color:var(--yellow)">⚠ Serial closed for upload — will reconnect after flash</span>');
-      } else {
-        appendSerial('<span style="color:var(--text3)">Serial disconnected.</span>');
-      }
+  } catch (e) {
+    if (!['AbortError','NetworkError','TypeError'].includes(e.name)) {
+      appendSerial(`<span style="color:var(--red)">Read error: ${e.message}</span>`);
     }
-
-    if (msg.type === 'data') {
-      appendSerial(escapeHtml(msg.text));
-    }
-
-    if (msg.type === 'error') {
-      appendSerial(`<span style="color:var(--red)">Error: ${escapeHtml(msg.text)}</span>`);
-      addLog('error', msg.text);
-    }
-  };
-
-  ws.onclose = () => {
-    // don't spam retries — checkBackend loop will reconnect
-    setTimeout(checkBackend, 5000);
-  };
-
-  ws.onerror = () => ws.close();
+  }
 }
 
-function wsSend(obj) {
-  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
+async function disconnectPort() {
+  try {
+    if (serialReader) { await serialReader.cancel(); serialReader = null; }
+    if (serialStreamClosed) { try { await serialStreamClosed; } catch {} serialStreamClosed = null; }
+    if (serialPort) { try { await serialPort.close(); } catch {} serialPort = null; }
+  } catch {}
+
+  isConnected = false;
+  document.getElementById('portDot').className = 'port-dot';
+  document.getElementById('portLabel').textContent = 'No port';
+  document.getElementById('portConnectBtn').style.display = '';
+  document.getElementById('portDisconnectBtn').style.display = 'none';
+  document.getElementById('statusPort').textContent = '⊖ No Port';
+  document.getElementById('serialInputRow').style.display = 'none';
+  appendSerial('<span style="color:var(--text3)">Disconnected.</span>');
+}
+
+// ── Serial send ───────────────────────────────────────────────────────────────
+async function sendSerial() {
+  const input = document.getElementById('serialInput');
+  const val   = input.value.trim();
+  if (!val) return;
+
+  if (isConnected && serialPort?.writable) {
+    const writer = serialPort.writable.getWriter();
+    await writer.write(new TextEncoder().encode(val + '\n'));
+    writer.releaseLock();
+  }
+  appendSerial(`<span style="color:var(--accent2)">→ ${escapeHtml(val)}</span>`);
+  input.value = '';
 }
 
 // ── Serial helpers ────────────────────────────────────────────────────────────
 function escapeHtml(s) {
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
 function appendSerial(html) {
@@ -138,368 +159,355 @@ function appendSerial(html) {
   out.scrollTop = out.scrollHeight;
 }
 
-// ── Port detection ────────────────────────────────────────────────────────────
-async function refreshPorts() {
-  try {
-    const res   = await fetch(`${API}/api/ports`);
-    const ports = await res.json();
-    const sel   = document.getElementById('portSelect');
-    const prev  = sel.value;
-
-    // Keep the placeholder
-    sel.innerHTML = '<option value="">-- Select Port --</option>';
-    ports.forEach(p => {
-      const label = p.manufacturer ? `${p.path} (${p.manufacturer})` : p.path;
-      sel.innerHTML += `<option value="${p.path}">${label}</option>`;
-    });
-
-    if (prev && [...sel.options].some(o => o.value === prev)) sel.value = prev;
-    if (ports.length === 0) addLog('warn', 'No serial ports detected. Plug in your device.');
-    else addLog('info', `Found ${ports.length} serial port(s)`);
-  } catch {
-    addLog('warn', 'Could not fetch ports — is the backend running?');
+// ── Baud rate change ──────────────────────────────────────────────────────────
+document.getElementById('baudRate').addEventListener('change', async function() {
+  if (isConnected) {
+    addLog('info', `Changing baud to ${this.value} — reconnecting...`);
+    await disconnectPort();
+    await openPort();
   }
-}
+});
 
-// ── Port connect/disconnect ───────────────────────────────────────────────────
-function onPortChange() {
-  const port = document.getElementById('portSelect').value;
-  if (!port) {
-    wsSend({ type: 'disconnect' });
-    document.getElementById('statusPort').textContent = '⊖ No Port';
+// ── Flash .bin (esptool-js, ESP32 only, no backend needed) ───────────────────
+async function flashBinFile() {
+  if (!WEB_SERIAL) {
+    addLog('error', '⚠ Web Serial required for Flash .bin — use Chrome/Edge 89+');
     return;
   }
-  const baud = parseInt(document.getElementById('baudRate').value, 10);
-  wsSend({ type: 'connect', port, baudRate: baud });
-  document.getElementById('statusPort').textContent = '⌛ ' + port;
-  switchPanel('serial');
+
+  const input = document.createElement('input');
+  input.type   = 'file';
+  input.accept = '.bin';
+  input.onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    // Close existing serial connection so esptool can access the port
+    if (isConnected) await disconnectPort();
+
+    let port = serialPort;
+    if (!port) {
+      try { port = await navigator.serial.requestPort(); }
+      catch { addLog('error', 'No port selected for flashing.'); return; }
+    }
+
+    showUploadOverlay('Flashing .bin...', `Writing ${file.name}`);
+    addLog('info', `Flashing ${file.name} (${(file.size/1024).toFixed(1)} KB)...`);
+    switchPanel('output');
+
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const fileContent = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+
+      const transport = new Transport(port, true);
+      const loader = new ESPLoader({
+        transport,
+        baudrate: 921600,
+        terminal: {
+          clean:     ()  => {},
+          writeLine: (d) => addLog('info', d.trim()),
+          write:     (d) => { if (d.trim()) addLog('info', d.trim()); },
+        },
+        enableTracing: false,
+      });
+
+      addLog('info', 'Connecting to ESP32...');
+      const chip = await loader.main();
+      addLog('success', `✓ Chip detected: ${chip}`);
+
+      await loader.writeFlash({
+        fileArray:  [{ data: fileContent, address: 0x0 }],
+        flashSize:  'keep',
+        flashMode:  'keep',
+        flashFreq:  'keep',
+        eraseAll:   false,
+        compress:   true,
+        reportProgress(idx, written, total) {
+          const pct = Math.round((written / total) * 100);
+          document.getElementById('progressBar').style.width  = pct + '%';
+          document.getElementById('progressLabel').textContent = pct + '%';
+        },
+      });
+
+      await loader.after();
+      await transport.disconnect();
+
+      hideUploadOverlay(true, 'Flash Complete!', 'ESP32 is running your firmware');
+      addLog('success', '✓ Flash successful!');
+
+      // Reopen serial monitor
+      serialPort = port;
+      setTimeout(openPort, 1500);
+
+    } catch (err) {
+      hideUploadOverlay(false, 'Flash Failed', err.message);
+      addLog('error', `Flash error: ${err.message}`);
+    }
+  };
+  input.click();
 }
 
-// ── Serial monitor send ───────────────────────────────────────────────────────
-function sendSerial() {
-  const input = document.getElementById('serialInput');
-  const val   = input.value.trim();
-  if (!val) return;
-  wsSend({ type: 'send', text: val });
-  appendSerial(`<span style="color:var(--accent2)">→ ${escapeHtml(val)}</span>`);
-  input.value = '';
-}
-
-// ── Verify (compile only) ─────────────────────────────────────────────────────
+// ── Verify (needs backend) ────────────────────────────────────────────────────
 async function verifyCode() {
+  if (!backendOnline) {
+    addLog('error', '⚠ Compile requires the local backend. Run: node server.js');
+    return;
+  }
   const btn   = document.getElementById('verifyBtn');
   const board = document.getElementById('boardSelect').value;
-  btn.textContent = '⏳ Verifying...';
-  btn.disabled    = true;
-  switchPanel('output');
-
+  btn.textContent = '⏳...'; btn.disabled = true;
   addLog('info', '─── Compiling ───');
-  addLog('info', `Board: ${document.getElementById('boardSelect').options[document.getElementById('boardSelect').selectedIndex].text}`);
 
   try {
-    const res  = await fetch(`${API}/api/compile`, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ code: editor.value, board }),
+    const res  = await fetch(`${BACKEND}/api/compile`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: editor.value, board }),
     });
     const data = await res.json();
-
     data.output.split('\n').filter(Boolean).forEach(line => {
-      if (/error:/i.test(line))   addLog('error', line);
+      if (/error:/i.test(line)) addLog('error', line);
       else if (/warn:/i.test(line)) addLog('warn', line);
-      else                          addLog('info', line);
+      else addLog('info', line);
     });
-
     if (data.success) {
-      addLog('success', '✓ Compilation successful — no errors.');
+      addLog('success', '✓ Compilation successful.');
       document.getElementById('errorCount').style.display = 'none';
     } else {
-      addLog('error', '✗ Compilation failed. See errors above.');
+      addLog('error', '✗ Compilation failed.');
       document.getElementById('errorCount').style.display = 'inline';
       document.getElementById('errorCount').textContent = '!';
     }
-  } catch (e) {
-    addLog('error', `Backend error: ${e.message}`);
-  }
+  } catch (e) { addLog('error', `Backend error: ${e.message}`); }
 
-  btn.textContent = '▶ Verify';
-  btn.disabled    = false;
+  btn.textContent = '▶ Verify'; btn.disabled = false;
 }
 
-// ── Upload ────────────────────────────────────────────────────────────────────
+// ── Upload (needs backend — backend runs arduino-cli) ────────────────────────
 async function uploadCode() {
-  const port  = document.getElementById('portSelect').value;
-  const board = document.getElementById('boardSelect').value;
-
-  if (!port) {
-    addLog('warn', '⚠ No port selected! Plug in your device and select a port.');
-    switchPanel('output');
+  if (!backendOnline) {
+    addLog('error', '⚠ Compile+Upload requires local backend. Run: node server.js');
+    addLog('info', 'Tip: For ESP32, you can also use ⚡ Flash .bin with a pre-compiled binary.');
+    return;
+  }
+  if (!isConnected && !serialPort) {
+    addLog('warn', '⚠ No port connected. Click 🔌 Connect first.');
     return;
   }
 
-  // Show overlay
-  const overlay      = document.getElementById('uploadOverlay');
-  const progressBar  = document.getElementById('progressBar');
-  const progressLabel = document.getElementById('progressLabel');
-  document.getElementById('uploadTitle').textContent = 'Uploading...';
-  document.getElementById('uploadSub').textContent   = `Flashing to ${document.getElementById('boardSelect').options[document.getElementById('boardSelect').selectedIndex].text}`;
+  // Get port name from Web Serial info (not always available)
+  const portInfo = serialPort?.getInfo?.() || {};
+  addLog('warn', 'Closing serial monitor for upload...');
+  await disconnectPort();
 
-  [1,2,3,4,5].forEach(i => {
-    document.getElementById('dot'  + i).className  = 'step-dot';
-    document.getElementById('step' + i).className  = 'upload-step';
-  });
-  setStep(1, 'active');
-  overlay.classList.add('show');
-  progressBar.style.width = '0%';
-  progressLabel.textContent = '0%';
-
-  addLog('info', '─── Uploading ───');
+  const board = document.getElementById('boardSelect').value;
+  showUploadOverlay('Uploading...', `Flashing to ${document.getElementById('boardSelect').options[document.getElementById('boardSelect').selectedIndex].text}`);
+  setAllSteps(''); setStep(1, 'active');
   switchPanel('output');
+  addLog('info', '─── Uploading via arduino-cli ───');
 
-  // Phase map: detect keywords in arduino-cli output → advance step
-  const phaseKeywords = [
-    { pct: 20,  step: 1, next: 2, kw: /Compiling/i },
-    { pct: 50,  step: 2, next: 3, kw: /Linking/i },
-    { pct: 70,  step: 3, next: 4, kw: /Writing|Uploading|esptool|avrdude/i },
-    { pct: 90,  step: 4, next: 5, kw: /Verifying|Hash of data/i },
+  // Prompt user for port path since Web Serial doesn't expose COM name
+  const port = prompt('Enter the COM port (e.g. COM3 or /dev/ttyUSB0):\n(Web Serial hides the port name from JS — this is required for arduino-cli)');
+  if (!port) { hideUploadOverlay(false, 'Cancelled', ''); return; }
+
+  const phaseKw = [
+    { pct:20, step:1, next:2, kw:/Compil/i },
+    { pct:50, step:2, next:3, kw:/Link/i },
+    { pct:75, step:3, next:4, kw:/Writing|esptool|avrdude/i },
+    { pct:92, step:4, next:5, kw:/Verif/i },
   ];
   let phaseIdx = 0;
 
   try {
-    const res = await fetch(`${API}/api/upload`, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ code: editor.value, board, port }),
+    const res = await fetch(`${BACKEND}/api/upload`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: editor.value, board, port }),
     });
-
-    const reader  = res.body.getReader();
-    const decoder = new TextDecoder();
-    let   buffer  = '';
-
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
     while (true) {
       const { value, done } = await reader.read();
       if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-
-      const events = buffer.split('\n\n');
-      buffer = events.pop();                   // keep incomplete
-
-      for (const raw of events) {
-        const line = raw.replace(/^data: /, '').trim();
+      buf += dec.decode(value, { stream: true });
+      for (const raw of buf.split('\n\n')) {
+        buf = '';
+        const line = raw.replace(/^data: /,'').trim();
         if (!line) continue;
-        let msg;
-        try { msg = JSON.parse(line); } catch { continue; }
-
-        if (msg.type === 'log') {
-          const text = msg.text.trim();
-          if (!text) continue;
-          if (/error:/i.test(text))   addLog('error', text);
-          else if (/warn:/i.test(text)) addLog('warn', text);
-          else                          addLog('info', text);
-
-          // Advance upload steps
-          while (phaseIdx < phaseKeywords.length && phaseKeywords[phaseIdx].kw.test(text)) {
-            const p = phaseKeywords[phaseIdx];
-            setStep(p.step, 'done');
-            if (p.next <= 5) setStep(p.next, 'active');
-            progressBar.style.width   = p.pct + '%';
-            progressLabel.textContent = p.pct + '%';
-            phaseIdx++;
+        let msg; try { msg = JSON.parse(line); } catch { continue; }
+        if (msg.type === 'log' && msg.text?.trim()) {
+          const t = msg.text.trim();
+          if (/error:/i.test(t)) addLog('error', t);
+          else addLog('info', t);
+          while (phaseIdx < phaseKw.length && phaseKw[phaseIdx].kw.test(t)) {
+            const p = phaseKw[phaseIdx++];
+            setStep(p.step,'done'); if(p.next<=5) setStep(p.next,'active');
+            document.getElementById('progressBar').style.width = p.pct+'%';
+            document.getElementById('progressLabel').textContent = p.pct+'%';
           }
         }
-
         if (msg.type === 'done') {
           if (msg.success) {
-            [1,2,3,4,5].forEach(i => setStep(i, 'done'));
-            progressBar.style.width   = '100%';
-            progressLabel.textContent = '100%';
-            document.getElementById('uploadTitle').textContent = 'Upload Complete!';
-            document.getElementById('uploadSub').textContent   = 'Device is running your code';
+            setAllSteps('done');
+            document.getElementById('progressBar').style.width = '100%';
+            document.getElementById('progressLabel').textContent = '100%';
+            hideUploadOverlay(true, 'Upload Complete!', 'Device is running your code');
             addLog('success', '✓ Upload successful!');
-
-            // Re-connect serial after a short delay
-            setTimeout(() => {
-              const baud = parseInt(document.getElementById('baudRate').value, 10);
-              wsSend({ type: 'connect', port, baudRate: baud });
-              switchPanel('serial');
-            }, 1500);
+            setTimeout(openPort, 1500);
           } else {
-            document.getElementById('uploadTitle').textContent = 'Upload Failed';
-            document.getElementById('uploadSub').textContent   = 'Check the Output tab for errors';
-            addLog('error', '✗ Upload failed. See output above.');
+            hideUploadOverlay(false, 'Upload Failed', 'See output for errors');
+            addLog('error', '✗ Upload failed.');
           }
-          setTimeout(() => overlay.classList.remove('show'), 1800);
         }
       }
     }
   } catch (e) {
+    hideUploadOverlay(false, 'Error', e.message);
     addLog('error', `Upload error: ${e.message}`);
-    overlay.classList.remove('show');
   }
 }
 
-function setStep(n, state) {
-  document.getElementById('dot'  + n).className  = 'step-dot ' + state;
-  document.getElementById('step' + n).className  = 'upload-step ' + state;
+// ── Upload overlay helpers ────────────────────────────────────────────────────
+function showUploadOverlay(title, sub) {
+  document.getElementById('uploadTitle').textContent = title;
+  document.getElementById('uploadSub').textContent   = sub;
+  document.getElementById('progressBar').style.width = '0%';
+  document.getElementById('progressLabel').textContent = '0%';
+  document.getElementById('uploadOverlay').classList.add('show');
 }
+function hideUploadOverlay(success, title, sub) {
+  document.getElementById('uploadTitle').textContent = title;
+  document.getElementById('uploadSub').textContent   = sub;
+  setTimeout(() => document.getElementById('uploadOverlay').classList.remove('show'), 1800);
+}
+function setStep(n, state) {
+  document.getElementById('dot'+n).className  = 'step-dot '+ state;
+  document.getElementById('step'+n).className = 'upload-step '+ state;
+}
+function setAllSteps(state) { [1,2,3,4,5].forEach(i => setStep(i, state)); }
 
 // ── Line numbers ──────────────────────────────────────────────────────────────
 function updateLineNumbers() {
   const lines   = editor.value.split('\n');
   const curLine = editor.value.substr(0, editor.selectionStart).split('\n').length;
-  lineNums.innerHTML = lines.map((_, i) => {
-    const cls = i + 1 === curLine ? ' current' : '';
-    return `<div class="line-num${cls}">${i + 1}</div>`;
-  }).join('');
+  lineNums.innerHTML = lines.map((_, i) =>
+    `<div class="line-num${i+1===curLine?' current':''}">${i+1}</div>`
+  ).join('');
 }
-
 function syncScroll() { lineNums.scrollTop = editor.scrollTop; }
-
-function onEditorInput() {
-  files[currentTab] = editor.value;
-  updateLineNumbers();
-  updateStatusChars();
-}
-
-function updateStatusChars() {
-  document.getElementById('statusChars').textContent = editor.value.length + ' chars';
-}
-
+function onEditorInput() { files[currentTab]=editor.value; updateLineNumbers(); updateStatusChars(); }
+function updateStatusChars() { document.getElementById('statusChars').textContent = editor.value.length+' chars'; }
 function updateCursor() {
-  const text  = editor.value.substr(0, editor.selectionStart);
-  const lines = text.split('\n');
+  const lines = editor.value.substr(0, editor.selectionStart).split('\n');
   document.getElementById('cursorPos').textContent = `Ln ${lines.length}, Col ${lines[lines.length-1].length+1}`;
   updateLineNumbers();
 }
 
-// ── Key bindings ──────────────────────────────────────────────────────────────
+// ── Keyboard shortcuts ────────────────────────────────────────────────────────
 function handleKeydown(e) {
-  if (e.key === 'Tab') {
+  if (e.key==='Tab') {
     e.preventDefault();
-    const s = editor.selectionStart, end = editor.selectionEnd;
-    editor.value = editor.value.substring(0, s) + '  ' + editor.value.substring(end);
-    editor.selectionStart = editor.selectionEnd = s + 2;
-    onEditorInput();
+    const s=editor.selectionStart, end=editor.selectionEnd;
+    editor.value=editor.value.substring(0,s)+'  '+editor.value.substring(end);
+    editor.selectionStart=editor.selectionEnd=s+2; onEditorInput();
   }
-  if (e.ctrlKey && e.key === 'r')                          { e.preventDefault(); verifyCode(); }
-  if (e.ctrlKey && e.shiftKey && e.key === 'U')            { e.preventDefault(); uploadCode(); }
-  if (e.ctrlKey && e.shiftKey && e.key === 'F')            { e.preventDefault(); formatCode(); }
+  if (e.ctrlKey&&e.key==='r')                 { e.preventDefault(); verifyCode(); }
+  if (e.ctrlKey&&e.shiftKey&&e.key==='U')     { e.preventDefault(); uploadCode(); }
+  if (e.ctrlKey&&e.shiftKey&&e.key==='F')     { e.preventDefault(); formatCode(); }
 }
 
 // ── File tabs ─────────────────────────────────────────────────────────────────
 function switchTab(tab) {
-  files[currentTab] = editor.value;
-  currentTab = tab;
-  editor.value = files[tab] || '';
-  updateLineNumbers();
-  updateStatusChars();
-  document.getElementById('tab-main').style.color   = tab === 'main'   ? 'var(--accent)' : '';
-  document.getElementById('tab-config').style.color = tab === 'config' ? 'var(--accent)' : '';
-  // Sidebar active
-  document.querySelectorAll('.sidebar-item').forEach(el => el.classList.remove('active'));
-  const match = [...document.querySelectorAll('.sidebar-item')].find(el => el.onclick?.toString().includes(`'${tab}'`));
-  if (match) match.classList.add('active');
+  files[currentTab]=editor.value; currentTab=tab; editor.value=files[tab]||'';
+  updateLineNumbers(); updateStatusChars();
+  document.getElementById('tab-main').style.color   = tab==='main'   ? 'var(--accent)' : '';
+  document.getElementById('tab-config').style.color = tab==='config' ? 'var(--accent)' : '';
 }
 
 // ── Panel tabs ────────────────────────────────────────────────────────────────
 function switchPanel(panel) {
-  currentPanel = panel;
+  currentPanel=panel;
   ['output','serial','errors'].forEach(p => {
-    document.getElementById(p + 'Panel').style.display = p === panel ? 'flex' : 'none';
-    document.getElementById('tab-' + p).classList.toggle('active', p === panel);
+    document.getElementById(p+'Panel').style.display = p===panel?'flex':'none';
+    document.getElementById('tab-'+p).classList.toggle('active', p===panel);
   });
   document.getElementById('serialInputRow').style.display =
-    (panel === 'serial' && isConnected) ? 'flex' : 'none';
+    (panel==='serial' && isConnected) ? 'flex' : 'none';
 }
 
 // ── Logging ───────────────────────────────────────────────────────────────────
 function getTime() {
-  const n = new Date();
+  const n=new Date();
   return `${String(n.getMinutes()).padStart(2,'0')}:${String(n.getSeconds()).padStart(2,'0')}`;
 }
-
 function addLog(type, msg) {
-  const out = document.getElementById('outputPanel');
-  const div = document.createElement('div');
-  div.className = 'log-line';
-  div.innerHTML = `<span class="log-time">[${getTime()}]</span><span class="log-${type}">${msg}</span>`;
-  out.appendChild(div);
-  out.scrollTop = out.scrollHeight;
-  logCount++;
+  const out=document.getElementById('outputPanel');
+  const d=document.createElement('div'); d.className='log-line';
+  d.innerHTML=`<span class="log-time">[${getTime()}]</span><span class="log-${type}">${msg}</span>`;
+  out.appendChild(d); out.scrollTop=out.scrollHeight; logCount++;
 }
-
 function clearOutput() {
-  document.getElementById('outputPanel').innerHTML = '';
-  document.getElementById('serialOutput').innerHTML = '';
-  logCount = 0;
+  document.getElementById('outputPanel').innerHTML='';
+  document.getElementById('serialOutput').innerHTML=''; logCount=0;
 }
 
 // ── Examples ──────────────────────────────────────────────────────────────────
 function toggleDropdown() { document.getElementById('ddMenu').classList.toggle('open'); }
-
 document.addEventListener('click', e => {
   if (!document.getElementById('examplesDD').contains(e.target))
     document.getElementById('ddMenu').classList.remove('open');
 });
-
 function loadExample(name) {
-  files.main = EXAMPLES[name] || files.main;
-  if (currentTab === 'main') editor.value = files.main;
+  files.main=EXAMPLES[name]||files.main;
+  if (currentTab==='main') editor.value=files.main;
   updateLineNumbers();
   document.getElementById('ddMenu').classList.remove('open');
-  addLog('info', `Loaded example: ${name}`);
+  addLog('info',`Loaded example: ${name}`);
 }
-
 function newFile() {
-  const name = prompt('New file name (e.g. helper.h):');
-  if (name) addLog('info', `File "${name}" created (feature coming soon)`);
+  const name=prompt('New file name (e.g. helper.h):');
+  if (name) addLog('info',`File "${name}" created (feature coming soon)`);
 }
 
 // ── Board select ──────────────────────────────────────────────────────────────
 const BOARD_INFO = {
-  esp32:    { label:'32', chip:'ESP32 • Xtensa LX6',        cls:'chip-esp', info:'CPU: Xtensa LX6<br>Flash: 4MB<br>SRAM: 520KB<br>Speed: 240MHz<br>WiFi: 802.11 b/g/n<br>BLE: 4.2/5.0' },
-  esp32s3:  { label:'S3', chip:'ESP32-S3 • Xtensa LX7',     cls:'chip-esp', info:'CPU: Xtensa LX7<br>Flash: 8MB<br>SRAM: 512KB<br>Speed: 240MHz<br>WiFi: 802.11 b/g/n<br>BLE: 5.0' },
-  esp32c3:  { label:'C3', chip:'ESP32-C3 • RISC-V',         cls:'chip-esp', info:'CPU: RISC-V 32-bit<br>Flash: 4MB<br>SRAM: 400KB<br>Speed: 160MHz<br>WiFi: 802.11 b/g/n<br>BLE: 5.0' },
-  esp32s2:  { label:'S2', chip:'ESP32-S2 • Xtensa LX7',     cls:'chip-esp', info:'CPU: Xtensa LX7<br>Flash: 4MB<br>SRAM: 320KB<br>Speed: 240MHz<br>WiFi: 802.11 b/g/n<br>BLE: No' },
-  uno:      { label:'Ω',  chip:'Arduino Uno • ATmega328P',  cls:'chip-avr', info:'CPU: ATmega328P<br>Flash: 32KB<br>SRAM: 2KB<br>Speed: 16MHz<br>WiFi: No<br>BLE: No' },
-  nano:     { label:'N',  chip:'Arduino Nano • ATmega328P', cls:'chip-avr', info:'CPU: ATmega328P<br>Flash: 32KB<br>SRAM: 2KB<br>Speed: 16MHz<br>WiFi: No<br>BLE: No' },
-  mega:     { label:'M',  chip:'Mega 2560 • ATmega2560',    cls:'chip-avr', info:'CPU: ATmega2560<br>Flash: 256KB<br>SRAM: 8KB<br>Speed: 16MHz<br>WiFi: No<br>BLE: No' },
-  leonardo: { label:'L',  chip:'Leonardo • ATmega32u4',     cls:'chip-avr', info:'CPU: ATmega32u4<br>Flash: 32KB<br>SRAM: 2.5KB<br>Speed: 16MHz<br>WiFi: No<br>BLE: No' },
-  mkr:      { label:'M',  chip:'MKR WiFi 1010 • SAMD21',   cls:'chip-avr', info:'CPU: ARM Cortex-M0+<br>Flash: 256KB<br>SRAM: 32KB<br>Speed: 48MHz<br>WiFi: 802.11 b/g/n<br>BLE: 4.2' },
-  wemos:    { label:'8',  chip:'Wemos D1 • ESP8266',        cls:'chip-esp', info:'CPU: Tensilica L106<br>Flash: 4MB<br>SRAM: 80KB<br>Speed: 80MHz<br>WiFi: 802.11 b/g/n<br>BLE: No' },
-  nodemcu:  { label:'8',  chip:'NodeMCU • ESP8266',         cls:'chip-esp', info:'CPU: Tensilica L106<br>Flash: 4MB<br>SRAM: 80KB<br>Speed: 80MHz<br>WiFi: 802.11 b/g/n<br>BLE: No' },
-  pico:     { label:'π',  chip:'Pi Pico • RP2040',          cls:'chip-avr', info:'CPU: ARM Cortex-M0+<br>Flash: 2MB<br>SRAM: 264KB<br>Speed: 133MHz<br>WiFi: No<br>BLE: No' },
+  esp32:    {label:'32', chip:'ESP32 • Xtensa LX6',        cls:'chip-esp', info:'CPU: Xtensa LX6<br>Flash: 4MB<br>SRAM: 520KB<br>Speed: 240MHz<br>WiFi: 802.11 b/g/n<br>BLE: 4.2/5.0'},
+  esp32s3:  {label:'S3', chip:'ESP32-S3 • Xtensa LX7',     cls:'chip-esp', info:'CPU: Xtensa LX7<br>Flash: 8MB<br>SRAM: 512KB<br>Speed: 240MHz<br>WiFi: 802.11 b/g/n<br>BLE: 5.0'},
+  esp32c3:  {label:'C3', chip:'ESP32-C3 • RISC-V',         cls:'chip-esp', info:'CPU: RISC-V 32-bit<br>Flash: 4MB<br>SRAM: 400KB<br>Speed: 160MHz<br>WiFi: 802.11 b/g/n<br>BLE: 5.0'},
+  esp32s2:  {label:'S2', chip:'ESP32-S2 • Xtensa LX7',     cls:'chip-esp', info:'CPU: Xtensa LX7<br>Flash: 4MB<br>SRAM: 320KB<br>Speed: 240MHz<br>WiFi: 802.11 b/g/n<br>BLE: No'},
+  uno:      {label:'Ω',  chip:'Arduino Uno • ATmega328P',  cls:'chip-avr', info:'CPU: ATmega328P<br>Flash: 32KB<br>SRAM: 2KB<br>Speed: 16MHz<br>WiFi: No<br>BLE: No'},
+  nano:     {label:'N',  chip:'Arduino Nano • ATmega328P', cls:'chip-avr', info:'CPU: ATmega328P<br>Flash: 32KB<br>SRAM: 2KB<br>Speed: 16MHz<br>WiFi: No<br>BLE: No'},
+  mega:     {label:'M',  chip:'Mega 2560 • ATmega2560',    cls:'chip-avr', info:'CPU: ATmega2560<br>Flash: 256KB<br>SRAM: 8KB<br>Speed: 16MHz<br>WiFi: No<br>BLE: No'},
+  leonardo: {label:'L',  chip:'Leonardo • ATmega32u4',     cls:'chip-avr', info:'CPU: ATmega32u4<br>Flash: 32KB<br>SRAM: 2.5KB<br>Speed: 16MHz<br>WiFi: No<br>BLE: No'},
+  mkr:      {label:'M',  chip:'MKR WiFi 1010 • SAMD21',   cls:'chip-avr', info:'CPU: ARM Cortex-M0+<br>Flash: 256KB<br>SRAM: 32KB<br>Speed: 48MHz<br>WiFi: 802.11 b/g/n<br>BLE: 4.2'},
+  wemos:    {label:'8',  chip:'Wemos D1 • ESP8266',        cls:'chip-esp', info:'CPU: Tensilica L106<br>Flash: 4MB<br>SRAM: 80KB<br>Speed: 80MHz<br>WiFi: 802.11 b/g/n<br>BLE: No'},
+  nodemcu:  {label:'8',  chip:'NodeMCU • ESP8266',         cls:'chip-esp', info:'CPU: Tensilica L106<br>Flash: 4MB<br>SRAM: 80KB<br>Speed: 80MHz<br>WiFi: 802.11 b/g/n<br>BLE: No'},
+  pico:     {label:'π',  chip:'Pi Pico • RP2040',          cls:'chip-avr', info:'CPU: ARM Cortex-M0+<br>Flash: 2MB<br>SRAM: 264KB<br>Speed: 133MHz<br>WiFi: No<br>BLE: No'},
 };
-
 function onBoardChange() {
-  const sel  = document.getElementById('boardSelect');
-  const info = BOARD_INFO[sel.value];
-  if (!info) return;
-  document.getElementById('boardIconLabel').textContent = info.label;
-  const chip = document.getElementById('boardChip');
-  chip.className   = 'chip-badge ' + info.cls;
-  chip.textContent = info.chip;
-  document.getElementById('boardInfo').innerHTML = info.info;
-  document.getElementById('statusBoard').textContent = '⚡ ' + sel.options[sel.selectedIndex].text;
-  addLog('info', `Board: ${sel.options[sel.selectedIndex].text}`);
+  const sel=document.getElementById('boardSelect');
+  const info=BOARD_INFO[sel.value]; if(!info) return;
+  document.getElementById('boardIconLabel').textContent=info.label;
+  const chip=document.getElementById('boardChip');
+  chip.className='chip-badge '+info.cls; chip.textContent=info.chip;
+  document.getElementById('boardInfo').innerHTML=info.info;
+  document.getElementById('statusBoard').textContent='⚡ '+sel.options[sel.selectedIndex].text;
+  addLog('info','Board: '+sel.options[sel.selectedIndex].text);
 }
 
 // ── Format ────────────────────────────────────────────────────────────────────
 function formatCode() {
-  editor.value = editor.value.replace(/\t/g, '  ');
-  files[currentTab] = editor.value;
-  addLog('success', '✓ Code formatted');
+  editor.value=editor.value.replace(/\t/g,'  '); files[currentTab]=editor.value;
+  addLog('success','✓ Code formatted');
 }
 
 // ── Font size ─────────────────────────────────────────────────────────────────
-function increaseFontSize() { fontSize = Math.min(20, fontSize+1); editor.style.fontSize = fontSize+'px'; }
-function decreaseFontSize() { fontSize = Math.max(10, fontSize-1); editor.style.fontSize = fontSize+'px'; }
+function increaseFontSize() { fontSize=Math.min(20,fontSize+1); editor.style.fontSize=fontSize+'px'; }
+function decreaseFontSize() { fontSize=Math.max(10,fontSize-1); editor.style.fontSize=fontSize+'px'; }
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
-let darkTheme = true;
+let darkTheme=true;
 function toggleTheme() {
-  darkTheme = !darkTheme;
-  const r = document.documentElement;
+  darkTheme=!darkTheme; const r=document.documentElement;
   if (!darkTheme) {
     r.style.setProperty('--bg','#f5f5f0'); r.style.setProperty('--bg2','#ebebE3');
     r.style.setProperty('--bg3','#e0e0d8'); r.style.setProperty('--bg4','#d4d4cc');
@@ -513,52 +521,19 @@ function toggleTheme() {
   }
 }
 
-// ── Library install ───────────────────────────────────────────────────────────
+// ── Library ───────────────────────────────────────────────────────────────────
 function addLib(name) {
-  addLog('info', `Installing library: ${name}...`);
-  setTimeout(() => addLog('success', `✓ ${name} installed (feature coming soon — use arduino-cli lib install "${name}")`), 900);
+  addLog('info',`Installing: ${name}...`);
+  setTimeout(()=>addLog('success',`✓ ${name} installed (run arduino-cli lib install "${name}" for real install)`),900);
 }
 
 // ── Resize panel ──────────────────────────────────────────────────────────────
-const handle = document.getElementById('resizeHandle');
-const panel  = document.getElementById('bottomPanel');
-let dragging = false, startY = 0, startH = 0;
-
-handle.addEventListener('mousedown', e => {
-  dragging = true; startY = e.clientY; startH = panel.offsetHeight;
-  document.body.style.cursor = 'ns-resize';
-  document.body.style.userSelect = 'none';
-});
-document.addEventListener('mousemove', e => {
-  if (!dragging) return;
-  panel.style.height = Math.max(80, Math.min(500, startH + (startY - e.clientY))) + 'px';
-});
-document.addEventListener('mouseup', () => {
-  dragging = false;
-  document.body.style.cursor = '';
-  document.body.style.userSelect = '';
-});
-
-// ── Baud rate change ──────────────────────────────────────────────────────────
-document.getElementById('baudRate').addEventListener('change', function() {
-  if (isConnected) {
-    wsSend({ type: 'set_baud', baudRate: parseInt(this.value, 10) });
-  }
-});
-
-// ── Port refresh button (add to toolbar dynamically) ─────────────────────────
-(function addRefreshBtn() {
-  const btn = document.createElement('button');
-  btn.className = 'tool-btn';
-  btn.title = 'Refresh serial ports';
-  btn.textContent = '🔄 Ports';
-  btn.onclick = async () => {
-    btn.textContent = '...';
-    await refreshPorts();
-    btn.textContent = '🔄 Ports';
-  };
-  document.querySelector('.port-select-wrap').after(btn);
-})();
+const handle=document.getElementById('resizeHandle');
+const panel=document.getElementById('bottomPanel');
+let dragging=false, startY=0, startH=0;
+handle.addEventListener('mousedown',e=>{dragging=true;startY=e.clientY;startH=panel.offsetHeight;document.body.style.cursor='ns-resize';document.body.style.userSelect='none';});
+document.addEventListener('mousemove',e=>{if(!dragging)return;panel.style.height=Math.max(80,Math.min(500,startH+(startY-e.clientY)))+'px';});
+document.addEventListener('mouseup',()=>{dragging=false;document.body.style.cursor='';document.body.style.userSelect='';});
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 init();
