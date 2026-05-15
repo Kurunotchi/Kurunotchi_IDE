@@ -37,7 +37,7 @@ function init() {
 // ── Backend check ───────────────────────────────────────────────────────────────────
 async function checkBackend() {
   try {
-    const res = await fetch(`${BACKEND}/api/ports`, { signal: AbortSignal.timeout(4000) });
+    const res = await fetch(`${BACKEND}/health`, { signal: AbortSignal.timeout(6000) });
     backendOnline = res.ok;
   } catch {
     backendOnline = false;
