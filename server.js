@@ -8,18 +8,28 @@
  *   - npm install
  */
 
-const express  = require('express');
-const http     = require('http');
+const express   = require('express');
+const http      = require('http');
 const WebSocket = require('ws');
-const { SerialPort } = require('serialport');
 const { exec, spawn } = require('child_process');
 const path = require('path');
 const fs   = require('fs');
 const os   = require('os');
 
+// SerialPort is optional — only needed for local serial monitor via WebSocket.
+// In cloud deployments, the browser uses Web Serial API instead.
+let SerialPort;
+try {
+  SerialPort = require('serialport').SerialPort;
+  console.log('✓ serialport loaded (local serial monitor available)');
+} catch {
+  console.log('ℹ serialport not available — Web Serial API handles serial in browser');
+}
+
 const app    = express();
 const server = http.createServer(app);
 const wss    = new WebSocket.Server({ server });
+
 
 app.use(express.json({ limit: '10mb' }));
 
@@ -69,6 +79,7 @@ function cleanupTemp(tmpDir) {
 
 // ── GET /api/ports ───────────────────────────────────────────────────────────
 app.get('/api/ports', async (req, res) => {
+  if (!SerialPort) return res.json([]);   // cloud mode — Web Serial API used instead
   try {
     const ports = await SerialPort.list();
     res.json(ports.map(p => ({

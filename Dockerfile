@@ -19,7 +19,7 @@ RUN arduino-cli core install esp8266:esp8266
 # App
 WORKDIR /app
 COPY package*.json ./
-RUN npm install --production
+RUN npm install --production --ignore-scripts
 COPY server.js .
 
 EXPOSE 3000
