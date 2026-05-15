@@ -1,7 +1,7 @@
 FROM node:20-slim
 
 # Install dependencies for arduino-cli
-RUN apt-get update && apt-get install -y curl ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y curl ca-certificates python3 python3-pip && rm -rf /var/lib/apt/lists/*
 
 # Install arduino-cli
 RUN curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | BINDIR=/usr/local/bin sh
