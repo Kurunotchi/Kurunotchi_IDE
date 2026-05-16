@@ -458,12 +458,14 @@ async function uploadCode() {
   setStep(2,'done'); setStep(3,'active');
 
   try {
-    // Close serial monitor so esptool can access the port
+    // Save port reference BEFORE disconnectPort() nulls serialPort
+    const flashPort = serialPort;
+    if (!flashPort) { throw new Error('No serial port selected. Click 🔌 Connect first.'); }
     if (isConnected) await disconnectPort();
 
     const fileContent = arrayBufferToBase64(binBuffer);
     const { Transport, ESPLoader } = await loadEsptool();
-    const transport   = new Transport(serialPort, true);
+    const transport   = new Transport(flashPort, true);
     const loader      = new ESPLoader({
       transport,
       baudrate: 921600,
@@ -504,6 +506,7 @@ async function uploadCode() {
     hideUploadOverlay(true, 'Upload Complete!', 'Device is running your code');
     addLog('success', '✓ Flash successful! Device is running.');
     uploadBtn.classList.remove('loading'); uploadBtn.textContent = '⚡ Upload'; ready.textContent = 'READY';
+    serialPort = flashPort; // restore so openPort() can reconnect serial monitor
     setTimeout(openPort, 1500);
 
   } catch (err) {
