@@ -259,14 +259,14 @@ async function flashBinFile() {
     const file = e.target.files[0];
     if (!file) return;
 
-    // Close existing serial connection so esptool can access the port
-    if (isConnected) await disconnectPort();
-
     let port = serialPort;
     if (!port) {
       try { port = await navigator.serial.requestPort(); }
       catch { addLog('error', 'No port selected for flashing.'); return; }
     }
+
+    // Close existing serial connection so esptool can access the port
+    if (isConnected) await disconnectPort();
 
     showUploadOverlay('Flashing .bin...', `Writing ${file.name}`);
     addLog('info', `Flashing ${file.name} (${(file.size/1024).toFixed(1)} KB)...`);
