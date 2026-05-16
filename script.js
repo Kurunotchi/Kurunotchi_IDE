@@ -308,7 +308,7 @@ async function flashBinFile() {
         },
       });
 
-      await loader.after();
+      await loader.hardReset();
       await transport.disconnect();
 
       hideUploadOverlay(true, 'Flash Complete!', 'ESP32 is running your firmware');
@@ -499,7 +499,7 @@ async function uploadCode() {
     });
 
     setStep(4,'done'); setStep(5,'active');
-    await loader.after();
+    await loader.hardReset();
     await transport.disconnect();
     setStep(5,'done');
 
