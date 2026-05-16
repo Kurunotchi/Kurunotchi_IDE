@@ -407,12 +407,24 @@ async function uploadCode() {
   // Step 1: Compile and get binary
   let binBuffer;
   let compileLog = '';
+  let fakeProgressInterval;
   try {
     addLog('info', 'Compiling on backend...');
+    
+    // Simulate compile progress so UI doesn't look stuck at 0%
+    let compilePct = 0;
+    fakeProgressInterval = setInterval(() => {
+      compilePct += (50 - compilePct) * 0.08;
+      if (compilePct > 49.9) compilePct = 49.9;
+      document.getElementById('progressBar').style.width = compilePct + '%';
+      document.getElementById('progressLabel').textContent = Math.round(compilePct) + '%';
+    }, 400);
+
     const res = await fetch(`${BACKEND}/api/compile-bin`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ code: getCode(), board }),
     });
+    clearInterval(fakeProgressInterval);
 
     if (!res.ok) {
       const err = await res.json();
@@ -435,6 +447,7 @@ async function uploadCode() {
     addLog('success', `✓ Compiled (${(binBuffer.byteLength/1024).toFixed(1)} KB)`);
 
   } catch (err) {
+    clearInterval(fakeProgressInterval);
     hideUploadOverlay(false, 'Compile Failed', err.message);
     uploadBtn.classList.remove('loading'); uploadBtn.textContent = '⚡ Upload'; ready.textContent = 'ERROR';
     return;
