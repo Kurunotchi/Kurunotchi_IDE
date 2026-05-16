@@ -18,15 +18,19 @@
   --purple: #a855f7;
   --font-mono: 'JetBrains Mono', monospace;
   --font-ui: 'Syne', sans-serif;
+  /* sidebar width — overridden on mobile */
+  --sidebar-w: 220px;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body { height: 100%; }
 
 body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-ui);
-  height: 100vh;
+  height: 100svh; /* safe for mobile browsers */
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -34,16 +38,16 @@ body {
 
 /* ── Titlebar ── */
 .titlebar {
-  height: 44px;
+  height: 48px;
   background: var(--bg2);
   border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
-  padding: 0 16px;
-  gap: 12px;
+  padding: 0 12px;
+  gap: 8px;
   flex-shrink: 0;
   position: relative;
-  z-index: 10;
+  z-index: 100;
 }
 
 .logo {
@@ -53,16 +57,23 @@ body {
   font-size: 15px;
   font-weight: 800;
   letter-spacing: -0.3px;
+  flex-shrink: 0;
 }
 
 .logo-icon {
-  width: 26px; height: 26px;
+  width: 28px; height: 28px;
   background: linear-gradient(135deg, var(--accent) 0%, var(--accent2) 100%);
-  border-radius: 6px;
+  border-radius: 7px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
+  font-size: 15px;
+  box-shadow: 0 0 12px rgba(0,212,170,0.4);
+  animation: logo-glow 3s ease-in-out infinite;
+}
+@keyframes logo-glow {
+  0%,100% { box-shadow: 0 0 10px rgba(0,212,170,0.35); }
+  50%      { box-shadow: 0 0 22px rgba(0,150,255,0.55); }
 }
 
 .logo span.glow { color: var(--accent); }
@@ -140,7 +151,9 @@ select option { background: #1a1e28; }
 .titlebar-right {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .btn {
@@ -193,7 +206,10 @@ select option { background: #1a1e28; }
   padding: 0 12px;
   gap: 2px;
   flex-shrink: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
+.toolbar::-webkit-scrollbar { display: none; }
 
 .tool-btn {
   padding: 4px 10px;
@@ -235,17 +251,27 @@ select option { background: #1a1e28; }
   flex: 1;
   display: flex;
   overflow: hidden;
+  position: relative;
 }
 
 /* ── Sidebar ── */
 .sidebar {
-  width: 220px;
+  width: var(--sidebar-w);
   background: var(--bg2);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
   overflow-y: auto;
+  transition: transform 0.25s ease, width 0.25s ease;
+}
+/* Mobile: sidebar slides in as drawer */
+.sidebar.mobile-open {
+  position: absolute;
+  top: 0; left: 0; bottom: 0;
+  z-index: 80;
+  transform: translateX(0);
+  box-shadow: 4px 0 24px rgba(0,0,0,0.6);
 }
 
 .sidebar-section {
@@ -370,6 +396,99 @@ select option { background: #1a1e28; }
   pointer-events: none;
   tab-size: 2;
 }
+
+/* ── CodeMirror overrides (Kurunotchi dark theme) ── */
+/* Reset CM default theme so our token colors show */
+.cm-s-default .cm-keyword,
+.cm-s-default .cm-atom,
+.cm-s-default .cm-number,
+.cm-s-default .cm-def,
+.cm-s-default .cm-variable,
+.cm-s-default .cm-variable-2,
+.cm-s-default .cm-variable-3,
+.cm-s-default .cm-type,
+.cm-s-default .cm-property,
+.cm-s-default .cm-operator,
+.cm-s-default .cm-string,
+.cm-s-default .cm-string-2,
+.cm-s-default .cm-comment,
+.cm-s-default .cm-qualifier,
+.cm-s-default .cm-builtin,
+.cm-s-default .cm-bracket,
+.cm-s-default .cm-tag,
+.cm-s-default .cm-attribute,
+.cm-s-default .cm-header,
+.cm-s-default .cm-hr,
+.cm-s-default .cm-link { color: inherit; }
+
+.CodeMirror {
+  height: 100%;
+  font-family: var(--font-mono);
+  font-size: 13.5px;
+  line-height: 1.7;
+  background: var(--bg) !important;
+  color: var(--text) !important;
+  border: none;
+}
+.CodeMirror-scroll { height: 100%; }
+.CodeMirror-gutters {
+  background: var(--bg2) !important;
+  border-right: 1px solid var(--border) !important;
+  min-width: 52px;
+}
+.CodeMirror-linenumber {
+  color: var(--text3) !important;
+  padding: 0 10px 0 6px;
+  font-size: 12px;
+}
+.CodeMirror-cursor {
+  border-left: 2px solid var(--accent) !important;
+}
+.CodeMirror-activeline-background {
+  background: rgba(255,255,255,0.03) !important;
+}
+.CodeMirror-selected {
+  background: rgba(0, 212, 170, 0.18) !important;
+}
+.CodeMirror-focused .CodeMirror-selected {
+  background: rgba(0, 212, 170, 0.22) !important;
+}
+/* ── Syntax token colors — scoped to override CM default theme ── */
+.cm-keyword   { color: #c792ea !important; font-weight: 600; } /* purple  – void, int, if… */
+.cm-atom      { color: #f78c6c !important; }                   /* orange  – true, false, null */
+.cm-number    { color: #f78c6c !important; }                   /* orange  – numeric literals */
+.cm-def       { color: #82aaff !important; }                   /* blue    – function/var defs */
+.cm-variable  { color: var(--text) !important; }
+.cm-variable-2 { color: #89ddff !important; }                  /* cyan    – secondary vars */
+.cm-variable-3 { color: #00d4aa !important; }                  /* teal    – tertiary */
+.cm-type      { color: #00d4aa !important; }                   /* teal    – types */
+.cm-property  { color: #89ddff !important; }
+.cm-operator  { color: #89ddff !important; }
+.cm-string    { color: #c3e88d !important; }                   /* green   – string literals */
+.cm-string-2  { color: #c3e88d !important; }
+.cm-comment   { color: #546e7a !important; font-style: italic; }
+.cm-qualifier { color: #c792ea !important; }
+.cm-builtin   { color: #00d4aa !important; }                   /* teal    – built-ins */
+.cm-bracket   { color: #89ddff !important; }
+.cm-tag       { color: #ef476f !important; }
+.cm-attribute { color: #ffd166 !important; }
+.cm-header    { color: var(--accent2) !important; font-weight: bold; }
+.cm-hr        { color: var(--text3) !important; }
+.cm-link      { color: var(--accent2) !important; text-decoration: underline; }
+.cm-meta      { color: #ff9cac !important; }                   /* pink    – preprocessor (#include) */
+/* Scrollbar inside CodeMirror */
+.CodeMirror-vscrollbar::-webkit-scrollbar { width: 6px; }
+.CodeMirror-vscrollbar::-webkit-scrollbar-thumb {
+  background: var(--border2); border-radius: 3px;
+}
+.CodeMirror-hscrollbar::-webkit-scrollbar { height: 6px; }
+.CodeMirror-hscrollbar::-webkit-scrollbar-thumb {
+  background: var(--border2); border-radius: 3px;
+}
+/* Make .editor-wrap host CM correctly */
+.editor-wrap { flex-direction: column; }
+.editor-wrap .CodeMirror { flex: 1; }
+
 
 /* ── Bottom panel ── */
 .bottom-panel {
@@ -549,22 +668,30 @@ select option { background: #1a1e28; }
 /* Status bar */
 .statusbar {
   height: 22px;
-  background: var(--accent);
+  background: linear-gradient(90deg, #005a45, #004a70, #005a45);
+  background-size: 200% 100%;
+  animation: statusbar-scroll 8s linear infinite;
   display: flex;
   align-items: center;
   padding: 0 12px;
   gap: 16px;
   flex-shrink: 0;
+  border-top: 1px solid rgba(0,212,170,0.25);
+}
+@keyframes statusbar-scroll {
+  0%   { background-position: 0% 0; }
+  100% { background-position: 200% 0; }
 }
 
 .status-item {
   font-size: 11px;
   font-weight: 600;
-  color: #000;
+  color: #a8ffec;
   display: flex;
   align-items: center;
   gap: 4px;
 }
+#statusReady { color: #00ffd0 !important; font-weight: 800; letter-spacing: 1px; }
 
 /* Scrollbar */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -740,3 +867,91 @@ select option { background: #1a1e28; }
   text-shadow: 0 0 12px rgba(0,212,170,0.6);
 }
 
+/* ══════════════════════════════════════════════════════════
+   RESPONSIVE / MOBILE  (device-friendly)
+   ══════════════════════════════════════════════════════════ */
+
+/* Hamburger button — hidden on desktop */
+.menu-toggle {
+  display: none;
+  background: transparent;
+  border: none;
+  color: var(--text2);
+  font-size: 20px;
+  cursor: pointer;
+  padding: 6px 8px;
+  border-radius: 6px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.menu-toggle:hover { background: var(--bg4); color: var(--text); }
+
+/* Sidebar backdrop (mobile overlay tap-to-close) */
+.sidebar-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  z-index: 79;
+  backdrop-filter: blur(2px);
+}
+.sidebar-backdrop.visible { display: block; }
+
+/* ── Tablet (≤ 900px) ── */
+@media (max-width: 900px) {
+  :root { --sidebar-w: 200px; }
+  .chip-badge { display: none; }
+  .toolbar { gap: 1px; padding: 0 6px; }
+}
+
+/* ── Mobile (≤ 640px) ── */
+@media (max-width: 640px) {
+  .menu-toggle { display: flex; align-items: center; justify-content: center; }
+
+  /* Sidebar becomes a slide-in drawer */
+  .sidebar {
+    position: fixed;
+    top: 0; left: 0; bottom: 0;
+    z-index: 80;
+    transform: translateX(-105%);
+    width: 270px !important;
+    padding-top: 52px; /* clear titlebar */
+    box-shadow: none;
+  }
+  .sidebar.mobile-open {
+    transform: translateX(0);
+    box-shadow: 4px 0 28px rgba(0,0,0,0.7);
+  }
+
+  /* Titlebar adjustments */
+  .titlebar { padding: 0 10px; gap: 6px; height: 52px; }
+  .titlebar-center { display: none; }
+
+  /* Only keep verify + upload buttons */
+  .btn-ghost { display: none; }
+  .btn-verify, .btn-upload { padding: 7px 12px; font-size: 12px; }
+
+  /* Toolbar: scrolls horizontally without wrapping */
+  .toolbar { height: 40px; padding: 0 8px; }
+  .tool-btn { min-height: 32px; font-size: 11px; white-space: nowrap; }
+
+  /* Bottom panel: adequate height on phones */
+  .bottom-panel { height: 170px; }
+
+  /* Upload card: full-width on phones */
+  .upload-card { width: 94vw; padding: 24px 18px; }
+
+  /* Status bar: only show 2 items */
+  .status-item:nth-child(n+4) { display: none; }
+
+  /* Serial input row: wrap on tiny screens */
+  .serial-input-wrap { flex-wrap: wrap; }
+  .serial-input { min-width: 0; }
+}
+
+/* ── Very small (≤ 380px) ── */
+@media (max-width: 380px) {
+  .logo { font-size: 13px; }
+  .logo-icon { width: 24px; height: 24px; font-size: 12px; }
+  .btn-verify, .btn-upload { padding: 6px 9px; font-size: 11px; }
+}

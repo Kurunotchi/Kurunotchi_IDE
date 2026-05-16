@@ -10,18 +10,25 @@
     href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Syne:wght@400;600;700;800&display=swap"
     rel="stylesheet">
   <link rel="stylesheet" href="style.css">
-  <!-- esptool-js: loaded as ES module, exposed as window globals for script.js -->
-  <script type="module">
-    import { ESPLoader, Transport } from 'https://unpkg.com/esptool-js@0.4.6/bundle.js';
-    window.ESPLoader = ESPLoader;
-    window.Transport = Transport;
-  </script>
+
+  <!-- CodeMirror 5: syntax highlighting for Arduino/C++ -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/show-hint.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/clike/clike.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/matchbrackets.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/closebrackets.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/selection/active-line.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/comment/comment.min.js"></script>
 </head>
 
 <body>
 
   <!-- ── Titlebar ── -->
   <div class="titlebar">
+    <!-- Hamburger: visible on mobile only -->
+    <button class="menu-toggle" id="menuToggle" onclick="toggleSidebar()" title="Toggle sidebar">☰</button>
+
     <div class="logo">
       <div class="logo-icon">🐢</div>
       Kuru<span class="glow">notchi</span>
@@ -113,8 +120,11 @@
 
   <!-- ── Main ── -->
   <div class="main">
+    <!-- Sidebar backdrop (mobile tap-to-close) -->
+    <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="closeSidebar()"></div>
+
     <!-- Sidebar -->
-    <div class="sidebar">
+    <div class="sidebar" id="sidebar">
       <div class="sidebar-section">
         <div class="sidebar-title">Project Files</div>
         <div class="sidebar-item active" onclick="switchTab('main')">
@@ -149,13 +159,12 @@
       </div>
     </div>
 
-    <!-- Editor -->
+    <!-- Editor: CodeMirror will replace the textarea -->
     <div class="editor-container">
       <div class="editor-wrap">
-        <div class="line-numbers" id="lineNumbers"></div>
-        <textarea class="code-editor" id="codeEditor" spellcheck="false" oninput="onEditorInput()"
-          onkeydown="handleKeydown(event)" onscroll="syncScroll()" onclick="updateCursor()"
-          onkeyup="updateCursor()"></textarea>
+        <!-- lineNumbers div hidden — CodeMirror renders its own -->
+        <div class="line-numbers" id="lineNumbers" style="display:none"></div>
+        <textarea class="code-editor" id="codeEditor" spellcheck="false"></textarea>
       </div>
 
       <!-- Resize handle -->

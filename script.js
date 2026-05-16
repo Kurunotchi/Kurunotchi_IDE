@@ -24,14 +24,72 @@ let serialStreamClosed = null;
 
 const editor   = document.getElementById('codeEditor');
 const lineNums = document.getElementById('lineNumbers');
+let   cmEditor = null;   // CodeMirror instance
+
+// ── esptool-js: loaded on-demand via dynamic import ──────────────────────────
+let _esptoolCache = null;
+async function loadEsptool() {
+  if (_esptoolCache) return _esptoolCache;
+  addLog('info', 'Loading esptool-js...');
+  const mod = await import('https://unpkg.com/esptool-js@0.4.6/bundle.js');
+  _esptoolCache = { Transport: mod.Transport, ESPLoader: mod.ESPLoader };
+  return _esptoolCache;
+}
+
+// ── Helpers: get / set code via CodeMirror (or fallback to textarea) ─────────
+function getCode()         { return cmEditor ? cmEditor.getValue() : editor.value; }
+function setCode(code)     { if (cmEditor) cmEditor.setValue(code); else editor.value = code; }
+function setCodeSilent(code) {
+  // set without firing onChange (used when switching tabs)
+  if (cmEditor) { cmEditor.setValue(code); } else { editor.value = code; }
+}
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 function init() {
-  editor.value = files.main;
-  updateLineNumbers();
+  initCodeMirror();
   updateStatusChars();
   checkBackend();
   loadGrantedPorts();
+}
+
+function initCodeMirror() {
+  cmEditor = CodeMirror.fromTextArea(editor, {
+    mode: 'text/x-c++src',
+    lineNumbers: true,
+    tabSize: 2,
+    indentWithTabs: false,
+    indentUnit: 2,
+    matchBrackets: true,
+    autoCloseBrackets: true,
+    styleActiveLine: true,
+    lineWrapping: false,
+    theme: 'default',
+    extraKeys: {
+      'Ctrl-R':       () => verifyCode(),
+      'Ctrl-Shift-U': () => uploadCode(),
+      'Ctrl-Shift-F': () => formatCode(),
+      'Ctrl-/':       (cm) => cm.execCommand('toggleComment'),
+      'Tab':          (cm) => cm.execCommand('indentMore'),
+      'Shift-Tab':    (cm) => cm.execCommand('indentLess'),
+    },
+  });
+
+  // Populate with current file
+  cmEditor.setValue(files.main);
+
+  cmEditor.on('change', () => {
+    files[currentTab] = cmEditor.getValue();
+    updateStatusChars();
+  });
+
+  cmEditor.on('cursorActivity', () => {
+    const cur = cmEditor.getCursor();
+    document.getElementById('cursorPos').textContent =
+      `Ln ${cur.line + 1}, Col ${cur.ch + 1}`;
+  });
+
+  // Apply current font size
+  cmEditor.getWrapperElement().style.fontSize = fontSize + 'px';
 }
 
 // ── Backend check ───────────────────────────────────────────────────────────────────
@@ -218,6 +276,7 @@ async function flashBinFile() {
       const arrayBuffer = await file.arrayBuffer();
       const fileContent = arrayBufferToBase64(arrayBuffer);
 
+      const { Transport, ESPLoader } = await loadEsptool();
       const transport = new Transport(port, true);
       const loader = new ESPLoader({
         transport,
@@ -288,7 +347,7 @@ async function verifyCode() {
   try {
     const res  = await fetch(`${BACKEND}/api/compile`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code: editor.value, board }),
+      body: JSON.stringify({ code: getCode(), board }),
     });
     const data = await res.json();
     data.output.split('\n').filter(Boolean).forEach(line => {
@@ -403,6 +462,7 @@ async function uploadCode() {
     if (isConnected) await disconnectPort();
 
     const fileContent = arrayBufferToBase64(binBuffer);
+    const { Transport, ESPLoader } = await loadEsptool();
     const transport   = new Transport(serialPort, true);
     const loader      = new ESPLoader({
       transport,
@@ -506,7 +566,7 @@ function updateLineNumbers() {
 }
 function syncScroll() { lineNums.scrollTop = editor.scrollTop; }
 function onEditorInput() { files[currentTab]=editor.value; updateLineNumbers(); updateStatusChars(); }
-function updateStatusChars() { document.getElementById('statusChars').textContent = editor.value.length+' chars'; }
+function updateStatusChars() { document.getElementById('statusChars').textContent = getCode().length+' chars'; }
 function updateCursor() {
   const lines = editor.value.substr(0, editor.selectionStart).split('\n');
   document.getElementById('cursorPos').textContent = `Ln ${lines.length}, Col ${lines[lines.length-1].length+1}`;
@@ -528,10 +588,13 @@ function handleKeydown(e) {
 
 // ── File tabs ─────────────────────────────────────────────────────────────────
 function switchTab(tab) {
-  files[currentTab]=editor.value; currentTab=tab; editor.value=files[tab]||'';
-  updateLineNumbers(); updateStatusChars();
+  files[currentTab] = getCode();
+  currentTab = tab;
+  setCodeSilent(files[tab] || '');
+  updateStatusChars();
   document.getElementById('tab-main').style.color   = tab==='main'   ? 'var(--accent)' : '';
   document.getElementById('tab-config').style.color = tab==='config' ? 'var(--accent)' : '';
+  if (cmEditor) cmEditor.focus();
 }
 
 // ── Panel tabs ────────────────────────────────────────────────────────────────
@@ -568,11 +631,11 @@ document.addEventListener('click', e => {
     document.getElementById('ddMenu').classList.remove('open');
 });
 function loadExample(name) {
-  files.main=EXAMPLES[name]||files.main;
-  if (currentTab==='main') editor.value=files.main;
-  updateLineNumbers();
+  files.main = EXAMPLES[name] || files.main;
+  if (currentTab === 'main') setCode(files.main);
   document.getElementById('ddMenu').classList.remove('open');
-  addLog('info',`Loaded example: ${name}`);
+  addLog('info', `Loaded example: ${name}`);
+  if (cmEditor) cmEditor.focus();
 }
 function newFile() {
   const name=prompt('New file name (e.g. helper.h):');
@@ -607,13 +670,23 @@ function onBoardChange() {
 
 // ── Format ────────────────────────────────────────────────────────────────────
 function formatCode() {
-  editor.value=editor.value.replace(/\t/g,'  '); files[currentTab]=editor.value;
-  addLog('success','✓ Code formatted');
+  const formatted = getCode().replace(/\t/g, '  ');
+  setCode(formatted);
+  files[currentTab] = formatted;
+  addLog('success', '✓ Code formatted (tabs → spaces)');
 }
 
 // ── Font size ─────────────────────────────────────────────────────────────────
-function increaseFontSize() { fontSize=Math.min(20,fontSize+1); editor.style.fontSize=fontSize+'px'; }
-function decreaseFontSize() { fontSize=Math.max(10,fontSize-1); editor.style.fontSize=fontSize+'px'; }
+function increaseFontSize() {
+  fontSize = Math.min(22, fontSize + 1);
+  if (cmEditor) cmEditor.getWrapperElement().style.fontSize = fontSize + 'px';
+  else editor.style.fontSize = fontSize + 'px';
+}
+function decreaseFontSize() {
+  fontSize = Math.max(9, fontSize - 1);
+  if (cmEditor) cmEditor.getWrapperElement().style.fontSize = fontSize + 'px';
+  else editor.style.fontSize = fontSize + 'px';
+}
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
 let darkTheme=true;
@@ -645,6 +718,24 @@ let dragging=false, startY=0, startH=0;
 handle.addEventListener('mousedown',e=>{dragging=true;startY=e.clientY;startH=panel.offsetHeight;document.body.style.cursor='ns-resize';document.body.style.userSelect='none';});
 document.addEventListener('mousemove',e=>{if(!dragging)return;panel.style.height=Math.max(80,Math.min(500,startH+(startY-e.clientY)))+'px';});
 document.addEventListener('mouseup',()=>{dragging=false;document.body.style.cursor='';document.body.style.userSelect='';});
+
+// ── Sidebar mobile toggle ─────────────────────────────────────────────────────
+function toggleSidebar() {
+  const sidebar  = document.getElementById('sidebar');
+  const backdrop = document.getElementById('sidebarBackdrop');
+  const isOpen   = sidebar.classList.contains('mobile-open');
+  if (isOpen) {
+    sidebar.classList.remove('mobile-open');
+    backdrop.classList.remove('visible');
+  } else {
+    sidebar.classList.add('mobile-open');
+    backdrop.classList.add('visible');
+  }
+}
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('mobile-open');
+  document.getElementById('sidebarBackdrop').classList.remove('visible');
+}
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 init();
