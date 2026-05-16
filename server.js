@@ -176,10 +176,41 @@ app.post('/api/compile-bin', (req, res) => {
       }
 
       const files = fs.readdirSync(buildDir);
-      const binFile = files.find(f => f.endsWith('.ino.bin')) ||
-                      files.find(f => f.endsWith('.bin')) ||
-                      files.find(f => f.endsWith('.ino.hex')) ||
-                      files.find(f => f.endsWith('.hex'));
+      let binFile = files.find(f => f.endsWith('.merged.bin'));
+
+      // If no pre-merged bin exists, but we have the pieces (ESP32), merge them!
+      if (!binFile && board.startsWith('esp32')) {
+         const appFile  = files.find(f => f.endsWith('.ino.bin') && !f.includes('bootloader') && !f.includes('partitions'));
+         const bootFile = files.find(f => f.endsWith('.bootloader.bin'));
+         const partFile = files.find(f => f.endsWith('.partitions.bin'));
+         
+         if (appFile && bootFile && partFile) {
+            const app  = fs.readFileSync(path.join(buildDir, appFile));
+            const boot = fs.readFileSync(path.join(buildDir, bootFile));
+            const part = fs.readFileSync(path.join(buildDir, partFile));
+            
+            const bootOffset = (board.includes('c3') || board.includes('s3')) ? 0x0 : 0x1000;
+            const partOffset = 0x8000;
+            const appOffset  = 0x10000;
+            
+            const mergedSize = appOffset + app.length;
+            const merged = Buffer.alloc(mergedSize, 0xFF);
+            
+            boot.copy(merged, bootOffset);
+            part.copy(merged, partOffset);
+            app.copy(merged, appOffset);
+            
+            binFile = 'sketch.merged.bin';
+            fs.writeFileSync(path.join(buildDir, binFile), merged);
+         }
+      }
+
+      if (!binFile) {
+        binFile = files.find(f => f.endsWith('.ino.bin')) ||
+                  files.find(f => f.endsWith('.bin')) ||
+                  files.find(f => f.endsWith('.ino.hex')) ||
+                  files.find(f => f.endsWith('.hex'));
+      }
 
       if (!binFile) {
         cleanupTemp(tmpDir);
