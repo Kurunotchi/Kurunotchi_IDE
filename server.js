@@ -92,7 +92,7 @@ function cleanupTemp(tmpDir) {
 // --jobs 1  : single-threaded = lower peak RAM (critical on free Railway 512MB)
 // --warnings none: skip warning pass = less memory
 function compileCmd(fqbn, sketchDir, outDir) {
-  const out  = outDir ? `--output-dir "${outDir}"` : '';
+  const out  = outDir ? `--build-path "${outDir}"` : '';
   return `arduino-cli compile --fqbn "${fqbn}" --jobs 1 --warnings none ${out} "${sketchDir}"`;
 }
 
