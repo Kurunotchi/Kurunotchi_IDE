@@ -100,7 +100,7 @@
     </div>
     <div class="separator"></div>
     <button class="tool-btn" onclick="newFile()">＋ New File</button>
-    <button class="tool-btn" id="tab-main" onclick="switchTab('main')" style="color:var(--accent)">main.ino</button>
+    <button class="tool-btn" id="tab-main" onclick="switchTab('main')" style="color:var(--accent)">main.cpp</button>
     <button class="tool-btn" id="tab-config" onclick="switchTab('config')">config.h</button>
     <div class="separator"></div>
     <button class="tool-btn" onclick="flashBinFile()" title="Flash a pre-compiled .bin to ESP32 (no backend needed)">⚡
@@ -128,7 +128,7 @@
       <div class="sidebar-section">
         <div class="sidebar-title">Project Files</div>
         <div class="sidebar-item active" onclick="switchTab('main')">
-          📄 main.ino <span class="file-type type-ino">.ino</span>
+          📄 main.cpp <span class="file-type type-cpp">.cpp</span>
         </div>
         <div class="sidebar-item" onclick="switchTab('config')">
           📄 config.h <span class="file-type type-h">.h</span>

@@ -410,7 +410,7 @@ async function uploadCode() {
     addLog('info', 'Compiling on backend...');
     const res = await fetch(`${BACKEND}/api/compile-bin`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code: editor.value, board }),
+      body: JSON.stringify({ code: getCode(), board }),
     });
 
     if (!res.ok) {
