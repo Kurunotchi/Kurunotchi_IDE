@@ -280,7 +280,7 @@ async function flashBinFile() {
       const transport = new Transport(port, true);
       const loader = new ESPLoader({
         transport,
-        baudrate: 921600,
+        baudrate: 115200,
         terminal: {
           clean:     ()  => {},
           writeLine: (d) => addLog('info', d.trim()),
@@ -482,7 +482,7 @@ async function uploadCode() {
     const transport   = new Transport(flashPort, true);
     const loader      = new ESPLoader({
       transport,
-      baudrate: 921600,
+      baudrate: 115200,
       terminal: {
         clean:     ()  => {},
         writeLine: (d) => { if (d.trim()) addLog('info', d.trim()); },
