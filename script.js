@@ -280,7 +280,7 @@ async function flashBinFile() {
       const transport = new Transport(port, true);
       const loader = new ESPLoader({
         transport,
-        baudrate: 921600,
+        baudrate: 115200,
         terminal: {
           clean:     ()  => {},
           writeLine: (d) => addLog('info', d.trim()),
@@ -290,6 +290,7 @@ async function flashBinFile() {
       });
 
       addLog('info', 'Connecting to ESP32...');
+      await new Promise(r => setTimeout(r, 500)); // Give OS time to release port lock
       const chip = await loader.main();
       addLog('success', `✓ Chip detected: ${chip}`);
 
@@ -468,7 +469,7 @@ async function uploadCode() {
     const transport   = new Transport(flashPort, true);
     const loader      = new ESPLoader({
       transport,
-      baudrate: 921600,
+      baudrate: 115200,
       terminal: {
         clean:     ()  => {},
         writeLine: (d) => { if (d.trim()) addLog('info', d.trim()); },
@@ -478,6 +479,7 @@ async function uploadCode() {
     });
 
     addLog('info', 'Connecting to chip...');
+    await new Promise(r => setTimeout(r, 500)); // Give OS time to release port lock
     const chip = await loader.main();
     addLog('success', `✓ Connected: ${chip}`);
 
