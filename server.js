@@ -91,9 +91,12 @@ function cleanupTemp(tmpDir) {
 // ── Build the arduino-cli compile command ───────────────────────────────────────────
 // --jobs 1  : single-threaded = lower peak RAM (critical on free Railway 512MB)
 // --warnings none: skip warning pass = less memory
+const CACHE_DIR = path.join(os.tmpdir(), 'kurunotchi-cache');
+fs.mkdirSync(CACHE_DIR, { recursive: true });
+
 function compileCmd(fqbn, sketchDir, outDir) {
   const out  = outDir ? `--build-path "${outDir}"` : '';
-  return `arduino-cli compile --fqbn "${fqbn}" --jobs 1 --warnings none ${out} "${sketchDir}"`;
+  return `arduino-cli compile --fqbn "${fqbn}" --jobs 1 --warnings none --build-cache-path "${CACHE_DIR}" ${out} "${sketchDir}"`;
 }
 
 function oomMessage(signal, code) {
